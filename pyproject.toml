@@ -1,7 +1,7 @@
 [project]
-name = "vibe-coding"
+name = "soma"
 version = "0.1.0"
-description = "Coze Vibe Coding project"
+description = "SOMA - AI-Driven Audio Processing Workstation"
 requires-python = ">=3.12"
 dependencies = [
     "langchain==1.0.3",
@@ -39,6 +39,14 @@ dependencies = [
     "pycairo==1.29.0",
     "dbus-python==1.3.2",
     "PyGObject==3.48.2",
+    # Audio Processing Dependencies
+    "numpy>=1.24,<2",
+    "scipy>=1.11,<2",
+    "soundfile>=0.12,<2",
+    "librosa>=0.10,<1",
+    "pydub>=0.25,<1",
+    "torch>=2.0,<3",
+    "torchaudio>=2.0,<3",
 ]
 
 [tool.uv]
@@ -48,18 +56,11 @@ url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
 
 # pypi 仅供 [tool.uv.sources] 显式引用：阿里云镜像同步 PyPI 新版有延迟（小时级），
-# 当某个内部包的预发布版（如 a/b/rc 后缀）刚 push 到官方 PyPI 还未同步到镜像时，
-# 临时让该包从 PyPI 取，避免 lock/install 失败。explicit=true 保证不影响其他包的解析。
-[[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple/"
-explicit = true
+# 若需第一时间获取最新版依赖，可放开注释使用 pypi 官方源
+# [[tool.uv.index]]
+# url = "https://pypi.org/simple/"
+# default = false
 
-[dependency-groups]
-dev = [
-    "pytest",
-    "pytest-asyncio>=0.23,<1",
-]
-
-[tool.pytest.ini_options]
-pythonpath = ["src"]
+[tool.uv.sources]
+# 如需从其他源安装特定包，在此配置
+# 示例：package-name = { index = "https://pypi.org/simple/" }
