@@ -17,6 +17,7 @@
 ### 核心特性
 
 - 🎵 **智能声音分离** — 基于深度学习的人声/伴奏分离、鼓点/贝斯/其他乐器提取
+- 🎙️ **声音转换** — 双引擎架构支持 RVC v2 / So-VITS-SVC 4.1
 - 🎛️ **专业音效处理** — 多频段均衡器、混响效果、音调变换
 - 🔄 **格式转换** — 支持多种音频格式的高质量转换
 - ⚡ **流水线处理** — 链式调用多个处理节点，批量自动化处理
@@ -32,6 +33,12 @@ src/
 │   ├── base.py              # 分离器基类
 │   ├── demucs_separator.py  # Demucs 分离器实现
 │   └── msst_separator.py    # MSST 分离器实现
+│
+├── voice_converters/  # 声音转换模块 (双引擎架构)
+│   ├── base.py              # 转换器基类和通用接口
+│   ├── rvc_converter.py     # RVC v2 引擎实现
+│   ├── sovits_converter.py  # So-VITS-SVC 4.1 引擎实现
+│   └── factory.py           # 引擎工厂和自动识别
 │
 ├── effects/         # 音效处理模块
 │   ├── base.py              # 效果器基类
@@ -105,7 +112,34 @@ pitch = PitchShifter(sample_rate=44100)
 result = pitch.process(audio, sr, semitones=2)  # 升高两个半音
 ```
 
-#### 3. 流水线处理
+#### 3. 声音转换
+
+```python
+from src.voice_converters import create_converter, ConversionParams
+
+# 自动识别并创建转换器
+converter = create_converter(
+    model_path="path/to/model.pth",
+    device="cuda"
+)
+
+# 设置转换参数
+params = ConversionParams(
+    pitch_shift=0,       # 半音调整 (-24 to +24)
+    pitch_algo="rmvpe",  # 音高算法
+    vpm=0.5,             # 音色匹配 (0.0-1.0)
+    rms_mix=0.5,         # 响度混合
+)
+
+# 执行转换
+result = converter.convert(audio, sample_rate, params)
+
+# 使用上下文管理器
+with create_converter("path/to/model.pth") as vc:
+    result = vc.convert(audio, sr)
+```
+
+#### 4. 流水线处理
 
 ```python
 from src.pipeline import PipelineBuilder
@@ -135,6 +169,14 @@ result = pipeline.execute(audio, sr)
 |------|------|------|
 | `DemucsSeparator` | 人声/鼓/贝斯/其他分离 | htdemucs |
 | `MSSTSeparator` | 高保真人声/伴奏分离 | MSST |
+
+### Voice Converters（声音转换模块）
+
+| 模块 | 功能 | 特性 |
+|------|------|------|
+| `RVCConverter` | RVC v2 声音转换 | 检索增强、索引加速 |
+| `SoVITSConverter` | So-VITS-SVC 4.1 转换 | 扩散模式、音色保护 |
+| `ConverterFactory` | 引擎工厂 | 自动识别、统一接口 |
 
 ### Effects（效果器模块）
 
