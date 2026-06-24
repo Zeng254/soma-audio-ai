@@ -162,8 +162,8 @@ def sample_rate():
 
 
 @pytest.fixture
-def mock_audio_file(temp_audio_dir):
-    """创建临时音频文件"""
+def temp_audio_file(temp_audio_dir):
+    """临时音频文件路径（temp_audio_file 的别名）"""
     import numpy as np
     import soundfile as sf
     
@@ -172,9 +172,24 @@ def mock_audio_file(temp_audio_dir):
     t = np.linspace(0, duration, int(sample_rate * duration))
     audio = np.sin(2 * np.pi * 440 * t).astype(np.float32)
     
-    file_path = temp_audio_dir / "test.wav"
+    file_path = temp_audio_dir / "test_audio.wav"
     sf.write(str(file_path), audio, sample_rate)
-    return file_path
+    return str(file_path)
+
+
+@pytest.fixture
+def sample_audio_data():
+    """示例音频数据（返回 (audio, sample_rate) 元组）"""
+    import numpy as np
+    sample_rate = 44100
+    duration = 1.0
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    audio = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+    return audio, sample_rate
+
+
+# 别名，确保两边都能找到
+temp_audio_file_fixture = temp_audio_file
 
 
 @pytest.fixture

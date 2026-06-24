@@ -121,8 +121,13 @@ class PathValidator:
             )
 
         # 4. 转换为绝对路径并规范化
+        path_obj = Path(path)
         try:
-            resolved = Path(path).expanduser().resolve()
+            if path_obj.exists():
+                resolved = path_obj.expanduser().resolve()
+            else:
+                # 路径不存在，只进行基本解析
+                resolved = path_obj.expanduser().resolve()
         except (OSError, RuntimeError) as e:
             raise ValueError(f"无法解析路径: {path} - {e}")
 
@@ -134,11 +139,13 @@ class PathValidator:
             )
 
         # 6. 检查符号链接
-        path_obj = Path(path)
-        if not self.allow_symlinks and path_obj.exists() and path_obj.is_symlink():
-            raise PathTraversalError(
-                message=f"符号链接已被禁用: {path!r}"
-            )
+        try:
+            if not self.allow_symlinks and path_obj.is_symlink():
+                raise PathTraversalError(
+                    message=f"符号链接已被禁用: {path!r}"
+                )
+        except (OSError, ValueError):
+            pass  # 文件不存在时跳过符号链接检查
 
         # 7. 检查路径深度
         self._check_depth(resolved)
@@ -186,25 +193,17 @@ class PathValidator:
 
     def _is_in_allowed_dirs(self, path: Path) -> bool:
         """检查路径是否在允许的目录范围内"""
-        try:
-            path.relative_to(*self.allowed_dirs)
-            return True
-        except TypeError:
-            # 只有一个目录
-            for allowed_dir in self.allowed_dirs:
-                try:
-                    path.relative_to(allowed_dir)
-                    return True
-                except ValueError:
-                    continue
-        except ValueError:
-            # 多目录情况
-            for allowed_dir in self.allowed_dirs:
-                try:
-                    path.relative_to(allowed_dir)
-                    return True
-                except ValueError:
-                    continue
+        # 如果没有配置允许目录，允许绝对路径
+        if not self.allowed_dirs:
+            return path.is_absolute()
+        
+        # 检查是否在允许的目录内
+        for allowed_dir in self.allowed_dirs:
+            try:
+                path.relative_to(allowed_dir)
+                return True
+            except ValueError:
+                continue
         return False
 
     def _check_depth(self, path: Path) -> None:

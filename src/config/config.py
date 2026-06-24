@@ -12,17 +12,30 @@ import os
 import json
 import copy
 import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional, Union, TypeVar, Type
-from dataclasses import dataclass, field, is_dataclass
-from functools import lru_cache
+from dataclasses import is_dataclass, asdict
 
-from .defaults import DEFAULT_CONFIG, SomaDefaults
+from .defaults import DEFAULT_CONFIG
 from src.exceptions import ConfigError, ConfigLoadError, ConfigValidationError
 
 T = TypeVar('T')
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_asdict(obj):
+    """安全地将 dataclass 转换为字典（处理嵌套）"""
+    if hasattr(obj, 'to_dict') and callable(obj.to_dict):
+        return obj.to_dict()
+    if isinstance(obj, dict):
+        return {k: _safe_asdict(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_safe_asdict(item) for item in obj]
+    if is_dataclass(obj):
+        return {k: _safe_asdict(v) for k, v in asdict(obj).items()}
+    return obj
 
 
 class Config:
@@ -54,7 +67,7 @@ class Config:
 
     def __init__(
         self,
-        base_config: Optional[SomaDefaults] = None,
+        base_config: Optional[Dict[str, Any]] = None,
         user_config: Optional[Dict[str, Any]] = None
     ):
         """
@@ -64,10 +77,22 @@ class Config:
             base_config: 基础配置（默认配置）
             user_config: 用户配置（会覆盖基础配置）
         """
-        self._base = base_config or copy.deepcopy(DEFAULT_CONFIG)
+        if base_config is None:
+            self._base = copy.deepcopy(DEFAULT_CONFIG)
+        elif isinstance(base_config, dict):
+            self._base = base_config
+        elif is_dataclass(base_config) and not isinstance(base_config, type):
+            # 如果是 dataclass 实例，转换为字典
+            self._base = asdict(base_config)
+        else:
+            self._base = copy.deepcopy(DEFAULT_CONFIG)
         self._user = user_config or {}
         self._path: Optional[Path] = None
         self._loaded = False
+        
+        # 应用用户配置到基础配置
+        if self._user:
+            self._apply_user_config(self._base, self._user)
 
     @classmethod
     def load(
@@ -110,61 +135,76 @@ class Config:
         else:
             logger.info("使用默认配置")
 
-        # 应用用户配置到基础配置
-        cls._apply_user_config(config._base, config._user)
-
         return config
 
     @classmethod
     def _apply_user_config(
         cls,
-        base: SomaDefaults,
+        base: Any,
         user: Dict[str, Any]
     ) -> None:
-        """将用户配置应用到基础配置"""
-        for key, value in user.items():
-            if hasattr(base, key):
-                base_attr = getattr(base, key)
-                if is_dataclass(base_attr):
-                    # 递归处理 dataclass
-                    cls._apply_dataclass(base_attr, value)
-                else:
-                    setattr(base, key, value)
+        """将用户配置应用到基础配置对象（支持字典和dataclass）"""
+        # 处理 dataclass 对象
+        if is_dataclass(base) and not isinstance(base, type):
+            base_dict = asdict(base) if hasattr(base, '__dataclass_fields__') else {}
+            for key, value in user.items():
+                if hasattr(base, key):
+                    current = getattr(base, key)
+                    if isinstance(current, dict) and isinstance(value, dict):
+                        cls._apply_dict(current, value)
+                    elif value is not None:
+                        # 类型安全转换
+                        try:
+                            if isinstance(current, bool):
+                                if isinstance(value, str):
+                                    value = value.lower() in ('true', '1', 'yes')
+                                else:
+                                    value = bool(value)
+                            elif isinstance(current, int) and isinstance(value, (int, float)):
+                                value = int(value)
+                            elif isinstance(current, float) and isinstance(value, (int, float)):
+                                value = float(value)
+                            setattr(base, key, value)
+                        except (ValueError, TypeError) as e:
+                            logger.warning(f"配置类型转换失败 {key}: {e}")
+        # 处理字典对象
+        elif isinstance(base, dict):
+            for key, value in user.items():
+                if key in base:
+                    if isinstance(base[key], dict) and isinstance(value, dict):
+                        cls._apply_dict(base[key], value)
+                    elif value is not None:
+                        base[key] = value
 
     @classmethod
-    def _apply_dataclass(
+    def _apply_dict(
         cls,
-        dataclass_obj: Any,
+        base_dict: Dict[str, Any],
         user_dict: Dict[str, Any]
     ) -> None:
-        """将字典值应用到 dataclass 对象"""
+        """将字典值应用到字典对象"""
         for key, value in user_dict.items():
-            if hasattr(dataclass_obj, key):
-                current = getattr(dataclass_obj, key)
-                if is_dataclass(current) and isinstance(value, dict):
-                    cls._apply_dataclass(current, value)
+            if key in base_dict:
+                if isinstance(base_dict[key], dict) and isinstance(value, dict):
+                    cls._apply_dict(base_dict[key], value)
                 elif value is not None:
                     # 安全类型转换
                     try:
+                        current = base_dict[key]
                         if isinstance(current, bool):
-                            # 特殊处理 bool：接受字符串 "true"/"false"
                             if isinstance(value, str):
                                 value = value.lower() in ('true', '1', 'yes')
                             else:
                                 value = bool(value)
-                        elif isinstance(current, int):
-                            if isinstance(value, (int, float)):
-                                value = int(value)
-                            elif isinstance(value, str):
-                                value = int(float(value))
-                        elif isinstance(current, float):
+                        elif isinstance(current, int) and isinstance(value, (int, float)):
+                            value = int(value)
+                        elif isinstance(current, float) and isinstance(value, (int, float)):
                             value = float(value)
                         elif isinstance(current, list) and not isinstance(value, list):
                             value = [value]
-                        setattr(dataclass_obj, key, value)
+                        base_dict[key] = value
                     except (ValueError, TypeError) as e:
                         logger.warning(f"配置类型转换失败 {key}: {e}")
-                        # 忽略转换失败，保持原值
 
     def save(self, path: Optional[Union[str, Path]] = None) -> None:
         """
@@ -256,14 +296,25 @@ class Config:
         target = self._base
 
         for k in keys[:-1]:
-            if not hasattr(target, k):
-                raise ConfigError(f"配置路径不存在: {key}")
-            target = getattr(target, k)
+            if isinstance(target, dict):
+                if k not in target:
+                    target[k] = {}
+                target = target[k]
+            elif hasattr(target, k):
+                # dataclass, 获取属性
+                target = getattr(target, k)
+            else:
+                # 创建新的字典
+                new_target = {}
+                setattr(target, k, new_target)
+                target = new_target
 
-        if not hasattr(target, keys[-1]):
-            raise ConfigError(f"配置路径不存在: {key}")
+        # 设置最终值
+        if isinstance(target, dict):
+            target[keys[-1]] = value
+        else:
+            setattr(target, keys[-1], value)
 
-        setattr(target, keys[-1], value)
         logger.debug(f"配置已更新: {key} = {value}")
 
     def get_section(self, section: str) -> Any:
@@ -276,8 +327,11 @@ class Config:
         Returns:
             配置节对象
         """
+        # 支持 dataclass 对象
         if hasattr(self._base, section):
             return getattr(self._base, section)
+        if isinstance(self._base, dict) and section in self._base:
+            return self._base[section]
         raise ConfigError(f"配置节不存在: {section}")
 
     def reset(self) -> None:
@@ -288,9 +342,12 @@ class Config:
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
-        if hasattr(self._base, 'to_dict'):
+        # 支持 dataclass 对象
+        if hasattr(self._base, 'to_dict') and callable(self._base.to_dict):
             return self._base.to_dict()
-        return self._base.__dict__
+        if isinstance(self._base, dict):
+            return copy.deepcopy(self._base)
+        return _safe_asdict(self._base)
 
     def validate(self) -> bool:
         """
@@ -324,7 +381,8 @@ class Config:
 
     @staticmethod
     def _get_nested(obj: Any, key: str) -> Optional[Any]:
-        """获取嵌套属性"""
+        """获取嵌套属性，只支持 '.' 作为分隔符"""
+        # 只使用 '.' 分隔符，不要替换 '_'
         keys = key.split('.')
         for k in keys:
             if isinstance(obj, dict):

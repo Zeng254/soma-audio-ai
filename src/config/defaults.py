@@ -39,6 +39,16 @@ class SeparatorDefaults:
     # 特定模型参数
     stem_types: list = field(default_factory=lambda: ["vocals", "drums", "bass", "other"])
 
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        result = {}
+        for key, value in self.__dict__.items():
+            if hasattr(value, 'to_dict'):
+                result[key] = value.to_dict()
+            else:
+                result[key] = value
+        return result
+
 
 @dataclass
 class VoiceConverterDefaults:
@@ -75,6 +85,18 @@ class VoiceConverterDefaults:
     # 模型缓存
     models_cache_dir: str = "~/.soma/models"
 
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化"""
+        result = {}
+        for key, value in self.__dict__.items():
+            if isinstance(value, (list, dict, str, int, float, bool, type(None))):
+                result[key] = value
+            elif hasattr(value, 'to_dict'):
+                result[key] = value.to_dict()
+            else:
+                result[key] = str(value)
+        return result
+
 
 @dataclass
 class EffectsDefaults:
@@ -100,6 +122,11 @@ class EffectsDefaults:
         # 预设类型
         preset: str = "flat"  # flat, vocal_enhance, bass_boost, treble_boost
 
+        def to_dict(self) -> dict:
+            """转换为字典用于 JSON 序列化"""
+            return {k: v for k, v in self.__dict__.items()
+                    if not k.startswith('_')}
+
     @dataclass
     class ReverbDefaults:
         """混响效果默认配置"""
@@ -120,6 +147,11 @@ class EffectsDefaults:
         # 预设
         preset: str = "natural"  # natural, dramatic, subtle, wet
 
+        def to_dict(self) -> dict:
+            """转换为字典用于 JSON 序列化"""
+            return {k: v for k, v in self.__dict__.items()
+                    if not k.startswith('_')}
+
     @dataclass
     class PitchDefaults:
         """音调变换默认配置"""
@@ -136,9 +168,26 @@ class EffectsDefaults:
         quick: bool = False  # 快速模式
         fft_size: int = 2048
 
+        def to_dict(self) -> dict:
+            """转换为字典用于 JSON 序列化"""
+            return {k: v for k, v in self.__dict__.items()
+                    if not k.startswith('_')}
+
     eq: EQDefaults = field(default_factory=EQDefaults)
     reverb: ReverbDefaults = field(default_factory=ReverbDefaults)
     pitch: PitchDefaults = field(default_factory=PitchDefaults)
+
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化"""
+        result = {}
+        for key, value in self.__dict__.items():
+            if isinstance(value, (list, dict, str, int, float, bool, type(None))):
+                result[key] = value
+            elif hasattr(value, 'to_dict'):
+                result[key] = value.to_dict()
+            else:
+                result[key] = str(value)
+        return result
 
 
 @dataclass
@@ -162,6 +211,11 @@ class ConverterDefaults:
     ffmpeg_path: str = "ffmpeg"
     timeout: int = 300  # 秒
 
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化"""
+        return {k: v for k, v in self.__dict__.items()
+                if not k.startswith('_')}
+
 
 @dataclass
 class AudioUtilsDefaults:
@@ -184,6 +238,11 @@ class AudioUtilsDefaults:
     # 临时文件
     temp_dir: str = "~/.soma/temp"
     auto_cleanup: bool = True
+
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化"""
+        return {k: v for k, v in self.__dict__.items()
+                if not k.startswith('_')}
 
 
 @dataclass
@@ -217,6 +276,11 @@ class SecurityDefaults:
         "github.com"
     ])
 
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化"""
+        return {k: v for k, v in self.__dict__.items()
+                if not k.startswith('_')}
+
 
 @dataclass
 class LoggingDefaults:
@@ -247,18 +311,20 @@ class LoggingDefaults:
         "soma.pipeline": "DEBUG"
     })
 
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化"""
+        return {k: v for k, v in self.__dict__.items()
+                if not k.startswith('_')}
+
 
 @dataclass
 class SomaDefaults:
     """SOMA 主配置"""
     # 版本信息
+    app_name: str = "SOMA"
     version: str = "0.1.0"
 
-    # 应用设置
-    app_name: str = "SOMA"
-    app_dir: str = "~/.soma"
-
-    # 子模块配置
+    # 子配置 (复数形式，与 Config API 保持一致)
     separators: SeparatorDefaults = field(default_factory=SeparatorDefaults)
     voice_converters: VoiceConverterDefaults = field(default_factory=VoiceConverterDefaults)
     effects: EffectsDefaults = field(default_factory=EffectsDefaults)
@@ -267,21 +333,12 @@ class SomaDefaults:
     security: SecurityDefaults = field(default_factory=SecurityDefaults)
     logging: LoggingDefaults = field(default_factory=LoggingDefaults)
 
-    def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
-        result = {}
-        for key, value in self.__dict__.items():
-            if hasattr(value, 'to_dict'):
-                result[key] = value.to_dict()
-            elif isinstance(value, dict):
-                result[key] = {
-                    k: v.to_dict() if hasattr(v, 'to_dict') else v
-                    for k, v in value.items()
-                }
-            else:
-                result[key] = value
-        return result
+    def to_dict(self) -> dict:
+        """转换为字典用于 JSON 序列化"""
+        return {k: v.to_dict() if hasattr(v, 'to_dict') else v
+                for k, v in self.__dict__.items()
+                if not k.startswith('_')}
 
 
-# 全局默认配置实例
+# 默认配置实例
 DEFAULT_CONFIG = SomaDefaults()

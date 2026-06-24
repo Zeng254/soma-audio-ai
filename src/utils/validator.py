@@ -347,6 +347,142 @@ class PipelineValidator:
             )
         
         return config
+
+
+# ============== 便捷工具函数 ==============
+
+def validate_pitch_shift(value: float, min_val: float = -24.0, max_val: float = 24.0) -> float:
+    """
+    验证音高偏移值
+    
+    Args:
+        value: 半音偏移值
+        min_val: 最小值 (默认 -24)
+        max_val: 最大值 (默认 +24)
+        
+    Returns:
+        验证后的值
+        
+    Raises:
+        ValidationError: 值超出范围
+    """
+    try:
+        value = float(value)
+    except (ValueError, TypeError):
+        raise ValidationError(f"Pitch shift must be a number, got {type(value)}")
+    
+    if not min_val <= value <= max_val:
+        raise ValidationError(f"Pitch shift {value} out of range [{min_val}, {max_val}]")
+    
+    return value
+
+
+def validate_duration(value: float, min_val: float = 0.1, max_val: float = 3600.0) -> float:
+    """
+    验证音频时长
+    
+    Args:
+        value: 时长（秒）
+        min_val: 最小值 (默认 0.1)
+        max_val: 最大值 (默认 3600)
+        
+    Returns:
+        验证后的值
+        
+    Raises:
+        ValidationError: 值超出范围
+    """
+    try:
+        value = float(value)
+    except (ValueError, TypeError):
+        raise ValidationError(f"Duration must be a number, got {type(value)}")
+    
+    if not min_val <= value <= max_val:
+        raise ValidationError(f"Duration {value}s out of range [{min_val}, {max_val}]s")
+    
+    return value
+
+
+def validate_model_path(path: str) -> str:
+    """
+    验证模型路径
+    
+    Args:
+        path: 模型文件路径
+        
+    Returns:
+        验证后的路径
+        
+    Raises:
+        ValidationError: 路径无效
+    """
+    if not path:
+        raise ValidationError("Model path cannot be empty")
+    
+    if not isinstance(path, str):
+        raise ValidationError(f"Model path must be string, got {type(path)}")
+    
+    # 检查扩展名
+    valid_extensions = ['.pth', '.pt', '.onnx', '.ckpt', '.safetensors']
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in valid_extensions:
+        raise ValidationError(f"Invalid model extension: {ext}. Valid: {valid_extensions}")
+    
+    return path
+
+
+def validate_audio_format(value: str) -> str:
+    """
+    验证音频格式
+    
+    Args:
+        value: 音频格式字符串
+        
+    Returns:
+        验证后的格式
+        
+    Raises:
+        ValidationError: 格式无效
+    """
+    if not value:
+        raise ValidationError("Audio format cannot be empty")
+    
+    valid_formats = {'wav', 'mp3', 'flac', 'ogg', 'm4a', 'aac', 'wma'}
+    value = value.lower().lstrip('.')
+    
+    if value not in valid_formats:
+        raise ValidationError(f"Invalid audio format: {value}. Valid: {valid_formats}")
+    
+    return value
+
+
+def validate_float(value: float, min_val: float = None, max_val: float = None) -> float:
+    """
+    验证浮点数
+    
+    Args:
+        value: 值
+        min_val: 最小值 (可选)
+        max_val: 最大值 (可选)
+        
+    Returns:
+        验证后的值
+        
+    Raises:
+        ValidationError: 值无效或超出范围
+    """
+    try:
+        value = float(value)
+    except (ValueError, TypeError):
+        raise ValidationError(f"Value must be convertible to float, got {type(value)}")
+    
+    if min_val is not None and value < min_val:
+        raise ValidationError(f"Value {value} below minimum {min_val}")
+    
+    if max_val is not None and value > max_val:
+        raise ValidationError(f"Value {value} above maximum {max_val}")
+    
+    return value
     
     @classmethod
     def validate_pipeline_config(cls, config: dict) -> dict:

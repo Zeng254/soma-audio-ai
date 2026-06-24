@@ -323,3 +323,46 @@ def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
 
     except Exception as e:
         return f"[PPT解析失败] {str(e)}"
+
+
+# ============================================================
+# 便捷函数
+# ============================================================
+
+def get_extension(path: str) -> str:
+    """
+    获取文件扩展名（包括点号）
+    
+    Args:
+        path: 文件路径
+        
+    Returns:
+        扩展名（包含点号），如 '.wav'
+    """
+    import os
+    return os.path.splitext(path)[1].lower()
+
+
+def safe_filename(filename: str) -> str:
+    """
+    生成安全的文件名（去除危险字符）
+    
+    Args:
+        filename: 原始文件名
+        
+    Returns:
+        安全的文件名
+    """
+    import re
+    # 移除或替换危险字符
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', filename)
+    # 移除开头和结尾的空格和点
+    safe = safe.strip('. ')
+    # 限制长度
+    if len(safe) > 200:
+        name, ext = os.path.splitext(safe)
+        safe = name[:200-len(ext)] + ext
+    # 确保不为空
+    if not safe:
+        safe = "unnamed"
+    return safe
