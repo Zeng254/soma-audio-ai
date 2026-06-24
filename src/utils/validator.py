@@ -7,8 +7,10 @@ from typing import Any, List, Optional, Tuple, Union
 from pathlib import Path
 import numpy as np
 
+from src.exceptions import SOMAError
 
-class ValidationError(Exception):
+
+class ValidationError(SOMAError):
     """验证错误"""
     pass
 

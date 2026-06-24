@@ -27,23 +27,9 @@ from typing import List, Union, Optional
 from dataclasses import dataclass, field
 
 from src.config import SecurityDefaults
+from src.exceptions import SecurityError, PathTraversalError
 
 logger = logging.getLogger(__name__)
-
-
-class SecurityError(Exception):
-    """安全相关异常基类"""
-    pass
-
-
-class PathTraversalError(SecurityError):
-    """路径遍历攻击检测异常"""
-    def __init__(self, path: str, reason: str = ""):
-        self.path = path
-        self.reason = reason
-        super().__init__(
-            f"路径遍历攻击检测: {path!r} - {reason}"
-        )
 
 
 class PathValidator:
@@ -125,15 +111,13 @@ class PathValidator:
         normalized = os.path.normpath(path_str)
         if '..' in Path(normalized).parts:
             raise PathTraversalError(
-                path_str,
-                "路径包含 .. 遍历组件"
+                message=f"路径包含 .. 遍历组件: {path_str!r}"
             )
 
         # 3. 检查 UNC 路径（Windows 攻击向量）
         if normalized.startswith('\\\\') or normalized.startswith('//'):
             raise PathTraversalError(
-                path_str,
-                "UNC 路径被禁用"
+                message=f"UNC 路径被禁用: {path_str!r}"
             )
 
         # 4. 转换为绝对路径并规范化
@@ -146,15 +130,13 @@ class PathValidator:
         normalized_resolved = os.path.normpath(str(resolved))
         if '..' in Path(normalized_resolved).parts:
             raise PathTraversalError(
-                str(resolved),
-                "规范化后路径包含 .. 遍历组件"
+                message=f"规范化后路径包含 .. 遍历组件: {resolved!r}"
             )
 
         # 6. 检查符号链接
         if not self.allow_symlinks and path.exists() and path.is_symlink():
             raise PathTraversalError(
-                str(path),
-                "符号链接已被禁用"
+                message=f"符号链接已被禁用: {path!r}"
             )
 
         # 7. 检查路径深度
@@ -163,8 +145,7 @@ class PathValidator:
         # 8. 检查是否在允许的目录范围内
         if not self._is_in_allowed_dirs(resolved):
             raise PathTraversalError(
-                str(path),
-                f"路径不在允许的目录范围内: {[str(d) for d in self.allowed_dirs]}"
+                message=f"路径不在允许的目录范围内: {path!r}"
             )
 
         logger.debug(f"路径验证通过: {path} -> {resolved}")
@@ -192,8 +173,7 @@ class PathValidator:
         normalized = os.path.normpath(path_str)
         if '..' in Path(normalized).parts:
             raise PathTraversalError(
-                path_str,
-                "路径包含 .. 遍历组件"
+                message=f"路径包含 .. 遍历组件: {path_str!r}"
             )
 
         try:
@@ -231,8 +211,7 @@ class PathValidator:
         depth = len(path.parts)
         if depth > self.max_depth:
             raise PathTraversalError(
-                str(path),
-                f"路径深度超限 ({depth} > {self.max_depth})"
+                message=f"路径深度超限 ({depth} > {self.max_depth}): {path!r}"
             )
 
     def is_safe(self, path: Union[str, Path]) -> bool:
@@ -274,3 +253,67 @@ def safe_path(
     else:
         validator = PathValidator()
     return validator.validate(path)
+
+
+def safe_join(*parts: str) -> str:
+    """
+    安全地拼接路径组件
+
+    Args:
+        *parts: 路径组件
+
+    Returns:
+        拼接后的路径
+
+    Raises:
+        PathTraversalError: 路径遍历攻击
+    """
+    path = os.path.join(*parts)
+    normalized = os.path.normpath(path)
+    if '..' in Path(normalized).parts:
+        raise PathTraversalError(
+            message=f"路径遍历攻击检测: {path!r}"
+        )
+    return path
+
+
+def ensure_directory(path: Union[str, Path], mode: int = 0o755) -> Path:
+    """
+    确保目录存在，如不存在则创建
+
+    Args:
+        path: 目录路径
+        mode: 目录权限
+
+    Returns:
+        Path 对象
+
+    Raises:
+        PathTraversalError: 路径不安全
+    """
+    p = Path(path).expanduser().resolve()
+    # 验证路径安全性
+    normalized = os.path.normpath(str(p))
+    if '..' in Path(normalized).parts:
+        raise PathTraversalError(
+            message=f"路径遍历攻击检测: {path!r}"
+        )
+    p.mkdir(parents=True, exist_ok=True, mode=mode)
+    return p
+
+
+# 全局验证器实例
+_default_validator: Optional[PathValidator] = None
+
+
+def get_validator() -> PathValidator:
+    """
+    获取全局 PathValidator 实例
+
+    Returns:
+        PathValidator 实例
+    """
+    global _default_validator
+    if _default_validator is None:
+        _default_validator = PathValidator()
+    return _default_validator

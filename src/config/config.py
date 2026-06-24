@@ -18,15 +18,11 @@ from dataclasses import dataclass, field, is_dataclass
 from functools import lru_cache
 
 from .defaults import DEFAULT_CONFIG, SomaDefaults
+from src.exceptions import ConfigError, ConfigLoadError, ConfigValidationError
 
 T = TypeVar('T')
 
 logger = logging.getLogger(__name__)
-
-
-class ConfigError(Exception):
-    """配置相关异常"""
-    pass
 
 
 class Config:

@@ -392,3 +392,20 @@ def load_model(
         explicit_unsafe=explicit_unsafe,
         **kwargs
     )
+
+
+# 全局加载器实例
+_default_loader: Optional[SafeModelLoader] = None
+
+
+def get_model_loader() -> SafeModelLoader:
+    """
+    获取全局 SafeModelLoader 实例
+
+    Returns:
+        SafeModelLoader 实例
+    """
+    global _default_loader
+    if _default_loader is None:
+        _default_loader = SafeModelLoader()
+    return _default_loader

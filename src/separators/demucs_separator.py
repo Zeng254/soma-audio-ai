@@ -138,7 +138,7 @@ class DemucsSeparator(BaseSeparator):
             sources = self._demucs(audio_tensor)
 
         # 提取各音轨到结果对象
-        result = self._extract_tracks(separated)
+        result = self._extract_tracks(sources)
 
         return result
 
