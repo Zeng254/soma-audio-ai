@@ -31,16 +31,18 @@ from enum import Enum
 
 from src.config import AudioUtilsDefaults
 from src.security.path_validator import safe_path
+from src.exceptions import AudioFormatError as BaseAudioFormatError
+from src.exceptions import AudioProcessingError as BaseAudioProcessingError
 
 logger = logging.getLogger(__name__)
 
 
-class AudioFormatError(Exception):
+class AudioFormatError(BaseAudioFormatError):
     """音频格式错误异常"""
     pass
 
 
-class AudioValidationError(Exception):
+class AudioValidationError(BaseAudioProcessingError):
     """音频验证失败异常"""
     pass
 

@@ -172,6 +172,7 @@ class AudioUtilsDefaults:
     default_bit_depth: int = 16
 
     # 文件大小限制
+    min_file_size_bytes: int = 1024  # 最小文件大小 1KB
     max_file_size_mb: int = 500  # 500MB
     max_duration_seconds: int = 3600  # 1小时
 

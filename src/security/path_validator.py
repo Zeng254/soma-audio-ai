@@ -134,7 +134,8 @@ class PathValidator:
             )
 
         # 6. 检查符号链接
-        if not self.allow_symlinks and path.exists() and path.is_symlink():
+        path_obj = Path(path)
+        if not self.allow_symlinks and path_obj.exists() and path_obj.is_symlink():
             raise PathTraversalError(
                 message=f"符号链接已被禁用: {path!r}"
             )
