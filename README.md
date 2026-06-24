@@ -199,6 +199,28 @@ result = pipeline.execute(audio, sr)
 | `AudioPipeline` | 链式处理、节点管理 |
 | `PipelineBuilder` | 流畅 API 构建 |
 
+### Config（配置中心）
+
+| 模块 | 功能 |
+|------|------|
+| `Config` | 统一配置管理、层级覆盖 |
+| `SomaDefaults` | 所有默认参数集中管理 |
+
+### Security（安全模块）
+
+| 模块 | 功能 |
+|------|------|
+| `PathValidator` | 路径安全校验、防路径遍历 |
+| `AudioValidator` | 音频格式/大小/时长验证 |
+| `SafeModelLoader` | 安全模型加载、权重校验 |
+
+### Utils（日志系统）
+
+| 模块 | 功能 |
+|------|------|
+| `setup_logging` | 统一日志系统、按天滚动 |
+| `get_logger` | 模块级别日志获取 |
+
 ---
 
 ## 🔧 开发指南
@@ -214,6 +236,30 @@ bash scripts/local_run.sh -m node -n node_name
 
 # 启动 HTTP 服务
 bash scripts/http_run.sh -m http -p 5000
+```
+
+### 运行测试
+
+```bash
+# 运行所有测试
+pytest tests/
+
+# 运行指定测试模块
+pytest tests/test_utils/
+pytest tests/test_config/
+pytest tests/test_security/
+
+# 运行带详细输出
+pytest tests/ -v
+
+# 运行并显示覆盖率
+pytest tests/ --cov=src --cov-report=html
+
+# 跳过慢速测试
+pytest tests/ -m "not slow"
+
+# 跳过需要 GPU 的测试
+pytest tests/ -m "not requires_gpu"
 ```
 
 ### 添加新的效果器
