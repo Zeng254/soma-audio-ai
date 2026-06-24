@@ -1,12 +1,12 @@
 """
 SOMA 安全模块 - 路径安全校验
 
-提供路径安全检查，防止路径遍历攻击（Path Traversal Attack）。
+提供路径安全检查，防止路径遍历攻击（Path Traversal）。
 
 攻击示例:
-- ../../etc/passwd
-- /home/user/../root/.ssh/id_rsa
-- \\UNC\path\to\share
+- ``../../etc/passwd``
+- ``/home/user/../root/.ssh/id_rsa``
+- ``\\\\UNC\\path\\to\\share``
 
 使用方式:
     from src.security.path_validator import PathValidator, safe_path
@@ -115,32 +115,52 @@ class PathValidator:
             PathTraversalError: 检测到路径遍历攻击
             ValueError: 路径无效
         """
-        path = Path(path)
-
         # 1. 检查空路径
         if not str(path).strip():
             raise ValueError("路径不能为空")
 
-        # 2. 转换为绝对路径并规范化
+        path_str = str(path)
+
+        # 2. 检查路径遍历攻击（使用 normpath 规范化后检查 .. 组件）
+        normalized = os.path.normpath(path_str)
+        if '..' in Path(normalized).parts:
+            raise PathTraversalError(
+                path_str,
+                "路径包含 .. 遍历组件"
+            )
+
+        # 3. 检查 UNC 路径（Windows 攻击向量）
+        if normalized.startswith('\\\\') or normalized.startswith('//'):
+            raise PathTraversalError(
+                path_str,
+                "UNC 路径被禁用"
+            )
+
+        # 4. 转换为绝对路径并规范化
         try:
-            resolved = path.expanduser().resolve()
+            resolved = Path(path).expanduser().resolve()
         except (OSError, RuntimeError) as e:
             raise ValueError(f"无法解析路径: {path} - {e}")
 
-        # 3. 检查路径遍历攻击
-        self._check_traversal(path, resolved)
+        # 5. 再次检查规范化后的路径
+        normalized_resolved = os.path.normpath(str(resolved))
+        if '..' in Path(normalized_resolved).parts:
+            raise PathTraversalError(
+                str(resolved),
+                "规范化后路径包含 .. 遍历组件"
+            )
 
-        # 4. 检查符号链接
+        # 6. 检查符号链接
         if not self.allow_symlinks and path.exists() and path.is_symlink():
             raise PathTraversalError(
                 str(path),
                 "符号链接已被禁用"
             )
 
-        # 5. 检查路径深度
+        # 7. 检查路径深度
         self._check_depth(resolved)
 
-        # 6. 检查是否在允许的目录范围内
+        # 8. 检查是否在允许的目录范围内
         if not self._is_in_allowed_dirs(resolved):
             raise PathTraversalError(
                 str(path),
@@ -150,39 +170,61 @@ class PathValidator:
         logger.debug(f"路径验证通过: {path} -> {resolved}")
         return resolved
 
-    def _check_traversal(self, original: Path, resolved: Path) -> None:
-        """检查路径遍历攻击"""
-        original_str = str(original)
+    def resolve(self, path: Union[str, Path]) -> Path:
+        """
+        安全解析路径（不检查存在性）
 
-        # 检查明显的路径遍历模式
-        if '..' in original_str:
-            # 规范化路径不应该包含 ..
-            parts = resolved.parts
-            if '..' in parts:
-                raise PathTraversalError(
-                    original_str,
-                    "检测到 .. 路径遍历"
-                )
+        Args:
+            path: 待解析的路径
 
-        # 检查是否在允许目录外结束
-        for allowed_dir in self.allowed_dirs:
-            try:
-                resolved.relative_to(allowed_dir)
-                return  # 路径在允许目录内
-            except ValueError:
-                continue
+        Returns:
+            解析后的 Path 对象
 
-        # 检查最终解析路径是否在允许范围内
-        is_allowed = any(
-            str(resolved).startswith(str(d))
-            for d in self.allowed_dirs
-        )
+        Raises:
+            PathTraversalError: 检测到路径遍历攻击
+        """
+        if not str(path).strip():
+            raise ValueError("路径不能为空")
 
-        if not is_allowed:
+        path_str = str(path)
+
+        # 检查路径遍历
+        normalized = os.path.normpath(path_str)
+        if '..' in Path(normalized).parts:
             raise PathTraversalError(
-                original_str,
-                "解析后的路径不在允许范围内"
+                path_str,
+                "路径包含 .. 遍历组件"
             )
+
+        try:
+            resolved = Path(path).expanduser().resolve()
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"无法解析路径: {path} - {e}")
+
+        return resolved
+
+    def _is_in_allowed_dirs(self, path: Path) -> bool:
+        """检查路径是否在允许的目录范围内"""
+        try:
+            path.relative_to(*self.allowed_dirs)
+            return True
+        except TypeError:
+            # 只有一个目录
+            for allowed_dir in self.allowed_dirs:
+                try:
+                    path.relative_to(allowed_dir)
+                    return True
+                except ValueError:
+                    continue
+        except ValueError:
+            # 多目录情况
+            for allowed_dir in self.allowed_dirs:
+                try:
+                    path.relative_to(allowed_dir)
+                    return True
+                except ValueError:
+                    continue
+        return False
 
     def _check_depth(self, path: Path) -> None:
         """检查路径深度"""
@@ -190,34 +232,8 @@ class PathValidator:
         if depth > self.max_depth:
             raise PathTraversalError(
                 str(path),
-                f"路径深度 {depth} 超过最大限制 {self.max_depth}"
+                f"路径深度超限 ({depth} > {self.max_depth})"
             )
-
-    def _is_in_allowed_dirs(self, path: Path) -> bool:
-        """检查路径是否在允许的目录范围内"""
-        for allowed_dir in self.allowed_dirs:
-            try:
-                path.relative_to(allowed_dir)
-                return True
-            except ValueError:
-                continue
-        return False
-
-    def resolve(self, path: Union[str, Path]) -> Path:
-        """
-        安全解析路径（验证后返回）
-
-        与 validate() 的区别：
-        - validate() 主要用于验证外部输入
-        - resolve() 可以用于任何需要安全解析的场景
-
-        Args:
-            path: 待解析的路径
-
-        Returns:
-            安全解析后的路径
-        """
-        return self.validate(path)
 
     def is_safe(self, path: Union[str, Path]) -> bool:
         """
@@ -227,7 +243,7 @@ class PathValidator:
             path: 待检查的路径
 
         Returns:
-            是否安全
+            bool: 是否安全
         """
         try:
             self.validate(path)
@@ -236,103 +252,25 @@ class PathValidator:
             return False
 
 
-# 全局默认验证器
-_default_validator: Optional[PathValidator] = None
-
-
-def get_validator() -> PathValidator:
-    """获取全局路径验证器实例"""
-    global _default_validator
-    if _default_validator is None:
-        _default_validator = PathValidator()
-    return _default_validator
-
-
 def safe_path(
     path: Union[str, Path],
-    base_dir: Optional[Union[str, Path]] = None
+    base_dir: Optional[Union[str, Path]] = None,
 ) -> Path:
     """
-    便捷的路径安全解析函数
+    安全获取路径的便捷函数
 
     Args:
-        path: 待解析的路径
-        base_dir: 基础目录，如果提供则路径必须在此目录下
+        path: 输入路径
+        base_dir: 允许的基准目录
 
     Returns:
-        安全解析后的路径
+        验证后的路径
 
     Raises:
         PathTraversalError: 路径不安全
-
-    示例:
-        safe = safe_path("~/audio/../secrets.wav")
-        safe = safe_path("../etc/passwd", base_dir="~/projects")
     """
-    validator = get_validator()
-
     if base_dir:
-        # 临时添加 base_dir 到允许列表
-        original_dirs = validator.allowed_dirs.copy()
-        try:
-            base = Path(base_dir).expanduser().resolve()
-            validator.allowed_dirs.append(base)
-            return validator.validate(path)
-        finally:
-            validator.allowed_dirs = original_dirs
+        validator = PathValidator(allowed_dirs=[base_dir])
     else:
-        return validator.validate(path)
-
-
-def ensure_directory(path: Union[str, Path]) -> Path:
-    """
-    确保目录存在（安全版本）
-
-    Args:
-        path: 目录路径
-
-    Returns:
-        已创建的目录路径
-
-    Raises:
-        PathTraversalError: 路径不安全
-    """
-    safe = safe_path(path)
-
-    if not safe.exists():
-        safe.mkdir(parents=True, exist_ok=True)
-        logger.debug(f"已创建目录: {safe}")
-
-    return safe
-
-
-def safe_join(*parts: str) -> Path:
-    """
-    安全地拼接路径组件
-
-    Args:
-        *parts: 路径组件
-
-    Returns:
-        拼接后的安全路径
-
-    示例:
-        safe = safe_join("~/data", "audio", "input.wav")
-    """
-    if not parts:
-        raise ValueError("至少需要提供一个路径组件")
-
-    # 第一个路径作为基础
-    base = safe_path(parts[0])
-
-    # 逐个添加后续组件
-    for part in parts[1:]:
-        # 清理路径中的 .. 和危险字符
-        part = part.strip().replace('..', '').lstrip('/\\')
-
-        if not part:
-            continue
-
-        base = base / part
-
-    return safe_path(base)
+        validator = PathValidator()
+    return validator.validate(path)

@@ -81,7 +81,7 @@ class MSSTSeparator(BaseSeparator):
         Returns:
             SeparationResult: 分离结果
         """
-        from utils.audio_io import AudioLoader
+        from src.utils.audio_io import AudioLoader
         
         loader = AudioLoader()
         audio, sr = loader.load(audio_path)

@@ -339,7 +339,7 @@ class AudioPipeline:
         Returns:
             bool: 是否成功
         """
-        from utils.audio_io import AudioLoader, AudioSaver
+        from src.utils.audio_io import AudioLoader, AudioSaver
         
         loader = AudioLoader()
         saver = AudioSaver()

@@ -3,6 +3,7 @@ SOMA 安全模块 - 安全模型加载
 
 提供安全的深度学习模型加载功能：
 - 使用 torch.load(weights_only=True) 防止代码执行
+- 默认严格模式，禁用不安全的 weights_only=False 回退
 - 校验模型文件大小和格式
 - 支持模型签名验证（可选）
 - 提供模型元数据提取
@@ -10,9 +11,14 @@ SOMA 安全模块 - 安全模型加载
 使用方式:
     from src.security.model_loader import SafeModelLoader, load_model
 
-    # 使用安全加载器
+    # 使用安全加载器（默认严格模式）
     loader = SafeModelLoader(trusted_signatures=["model_v1_hash"])
     model = loader.load("model.pth", device="cuda")
+
+    # 如果确实需要加载包含非权重数据的模型（如优化器状态），
+    # 显式设置 explicit_unsafe=True（需要自行承担风险）
+    loader = SafeModelLoader()
+    model = loader.load("full_checkpoint.pth", explicit_unsafe=True)
 
     # 使用便捷函数
     model = load_model("model.pth", map_location="cpu")
@@ -42,6 +48,11 @@ class ModelVerificationError(Exception):
     pass
 
 
+class ModelSecurityError(Exception):
+    """模型安全检查失败异常"""
+    pass
+
+
 @dataclass
 class ModelMetadata:
     """模型元数据"""
@@ -57,10 +68,11 @@ class SafeModelLoader:
     安全的模型加载器
 
     安全特性:
-    1. 使用 weights_only=True 防止代码执行
-    2. 验证模型文件大小
-    3. 支持模型完整性校验
-    4. 详细的错误信息
+    1. 默认使用 weights_only=True 防止代码执行
+    2. 严格模式：默认禁用 weights_only=False 回退
+    3. 验证模型文件大小
+    4. 支持模型完整性校验
+    5. 详细的错误信息
 
     使用示例:
         loader = SafeModelLoader(
@@ -69,7 +81,11 @@ class SafeModelLoader:
             device="cuda"
         )
 
+        # 安全加载（默认）
         model = loader.load("path/to/model.pth")
+
+        # 显式降级（需要用户确认风险）
+        model = loader.load("full_checkpoint.pth", explicit_unsafe=True)
     """
 
     # 支持的模型格式
@@ -101,7 +117,8 @@ class SafeModelLoader:
         model_path: Union[str, Path],
         map_location: Optional[str] = None,
         weights_only: bool = True,
-        verify: bool = True
+        verify: bool = True,
+        explicit_unsafe: bool = False
     ) -> Any:
         """
         安全加载模型
@@ -111,12 +128,15 @@ class SafeModelLoader:
             map_location: 设备映射
             weights_only: 是否只加载权重（安全模式）
             verify: 是否验证模型完整性
+            explicit_unsafe: 是否显式允许不安全模式（weights_only=False）
+                            默认为 False，严格模式
 
         Returns:
             加载的模型对象
 
         Raises:
             ModelLoadError: 加载失败
+            ModelSecurityError: 安全检查失败
             ModelVerificationError: 验证失败
         """
         model_path = safe_path(model_path)
@@ -139,7 +159,12 @@ class SafeModelLoader:
         device = map_location or self._get_device()
 
         # 6. 加载模型
-        return self._load_torch_model(model_path, device, weights_only)
+        return self._load_torch_model(
+            model_path,
+            device,
+            weights_only=weights_only,
+            explicit_unsafe=explicit_unsafe
+        )
 
     def _validate_format(self, path: Path) -> None:
         """验证模型文件格式"""
@@ -184,13 +209,13 @@ class SafeModelLoader:
 
     def _calculate_checksum(self, path: Path) -> str:
         """计算文件 SHA256 校验和"""
-        sha256 = hashlib.sha256()
+        sha256_hash = hashlib.sha256()
 
         with open(path, 'rb') as f:
             for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
+                sha256_hash.update(chunk)
 
-        return sha256.hexdigest()
+        return sha256_hash.hexdigest()
 
     def _get_device(self) -> str:
         """获取加载设备"""
@@ -212,43 +237,82 @@ class SafeModelLoader:
         self,
         path: Path,
         device: str,
-        weights_only: bool
+        weights_only: bool = True,
+        explicit_unsafe: bool = False
     ) -> Any:
-        """加载 PyTorch 模型"""
+        """
+        加载 PyTorch 模型
+
+        Args:
+            path: 模型路径
+            device: 目标设备
+            weights_only: 是否只加载权重
+            explicit_unsafe: 是否显式允许不安全模式
+
+        Returns:
+            加载的模型状态字典或模型对象
+
+        Raises:
+            ModelLoadError: 加载失败
+            ModelSecurityError: 安全检查失败
+        """
         try:
             import torch
 
-            # 安全加载：使用 weights_only=True 防止代码执行
-            # 但如果模型包含非权重数据（如优化器状态），需要设为 False
-            logger.info(f"正在加载模型: {path}")
+            logger.info(f"正在加载模型: {path} (weights_only={weights_only}, explicit_unsafe={explicit_unsafe})")
 
-            # 首先尝试以 weights_only 模式加载
-            try:
-                state_dict = torch.load(
-                    path,
-                    map_location=device,
-                    weights_only=True
-                )
-                logger.info(f"模型已安全加载 (weights_only=True)")
-            except Exception as e:
-                # 如果失败，尝试关闭 weights_only（用于加载完整模型）
-                if "weights_only" in str(e).lower() or "unpicklable" in str(e).lower():
-                    logger.warning(
-                        f"weights_only=True 加载失败 ({e})，"
-                        f"尝试 weights_only=False，这可能存在安全风险"
-                    )
+            # 严格模式：默认使用 weights_only=True
+            if weights_only or not explicit_unsafe:
+                # 安全模式：只允许 weights_only=True
+                try:
                     state_dict = torch.load(
                         path,
                         map_location=device,
-                        weights_only=False
+                        weights_only=True
                     )
-                else:
-                    raise
-
-            return state_dict
+                    logger.info(f"模型已安全加载 (weights_only=True)")
+                    return state_dict
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    # 检查是否是因为模型确实包含无法用 weights_only 加载的数据
+                    if "weights_only" in error_msg or "unpicklable" in error_msg or "storage" in error_msg:
+                        if explicit_unsafe:
+                            # 用户已显式确认风险，降级到不安全模式
+                            logger.warning(
+                                f"weights_only=True 加载失败 ({e})，"
+                                f"由于 explicit_unsafe=True，将尝试 weights_only=False"
+                            )
+                            state_dict = torch.load(
+                                path,
+                                map_location=device,
+                                weights_only=False
+                            )
+                            logger.warning(f"模型已使用不安全模式加载 (weights_only=False)，请确保模型来源可信")
+                            return state_dict
+                        else:
+                            # 严格模式：抛出异常
+                            raise ModelSecurityError(
+                                f"模型加载失败：此模型包含非权重数据（如 Python 对象、lambda 函数等），"
+                                f"无法使用安全模式 (weights_only=True) 加载。"
+                                f"如需加载此类模型，请使用 explicit_unsafe=True 参数，"
+                                f"但请确保模型来源可信，以避免代码执行风险。"
+                            )
+                    else:
+                        raise ModelLoadError(f"模型加载失败: {e}")
+            else:
+                # 非安全模式（已废弃，仅在 explicit_unsafe=True 时可用）
+                state_dict = torch.load(
+                    path,
+                    map_location=device,
+                    weights_only=False
+                )
+                logger.warning(f"模型已使用不安全模式加载 (weights_only=False)，请确保模型来源可信")
+                return state_dict
 
         except ImportError:
-            raise ModelLoadError("PyTorch 未安装，请运行: pip install torch")
+            raise ModelLoadError("PyTorch 未安装，请运行: uv add torch torchaudio")
+        except (ModelLoadError, ModelSecurityError):
+            raise
         except Exception as e:
             raise ModelLoadError(f"模型加载失败: {e}")
 
@@ -280,7 +344,7 @@ class SafeModelLoader:
         # 尝试读取嵌入的元数据
         if ext == '.pth':
             try:
-                # 不完全加载，只读取元数据
+                # 使用 weights_only=True 安全读取元数据
                 import torch
                 with open(model_path, 'rb') as f:
                     checkpoint = torch.load(
@@ -297,27 +361,17 @@ class SafeModelLoader:
                     }
 
             except Exception as e:
-                logger.debug(f"无法读取模型元数据: {e}")
+                logger.debug(f"读取模型元数据失败: {e}")
 
         return metadata
 
 
-# 全局加载器实例
-_default_loader: Optional[SafeModelLoader] = None
-
-
-def get_model_loader() -> SafeModelLoader:
-    """获取全局模型加载器实例"""
-    global _default_loader
-    if _default_loader is None:
-        _default_loader = SafeModelLoader()
-    return _default_loader
-
-
+# 便捷函数
 def load_model(
     model_path: Union[str, Path],
     map_location: Optional[str] = None,
-    weights_only: bool = True
+    explicit_unsafe: bool = False,
+    **kwargs
 ) -> Any:
     """
     便捷的模型加载函数
@@ -325,17 +379,16 @@ def load_model(
     Args:
         model_path: 模型文件路径
         map_location: 设备映射
-        weights_only: 是否只加载权重
+        explicit_unsafe: 是否显式允许不安全模式
+        **kwargs: 其他参数
 
     Returns:
-        加载的模型
-
-    示例:
-        model = load_model("path/to/model.pth", map_location="cpu")
+        加载的模型对象
     """
-    loader = get_model_loader()
+    loader = SafeModelLoader()
     return loader.load(
         model_path,
         map_location=map_location,
-        weights_only=weights_only
+        explicit_unsafe=explicit_unsafe,
+        **kwargs
     )
