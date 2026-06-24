@@ -47,16 +47,22 @@ from .defaults import (
 
 from .config import (
     Config,
-    ConfigError,
     get_config,
     get_config_path,
     init_config,
 )
 
+from src.exceptions import ConfigError, ConfigLoadError, ConfigValidationError, ConfigTypeError
+
 __all__ = [
     # 配置类
     "Config",
+
+    # 异常
     "ConfigError",
+    "ConfigLoadError",
+    "ConfigValidationError",
+    "ConfigTypeError",
 
     # 默认配置
     "DEFAULT_CONFIG",

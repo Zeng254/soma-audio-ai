@@ -63,20 +63,29 @@ class DemucsSeparator(BaseSeparator):
             try:
                 from demucs import pretrained
                 from demucs.pretrained import get_model
-                self._model = get_model(self.model_name)
+                # Demucs 4.0+ API: get_model 返回一个包含 model 的对象
+                model_bundle = get_model(self.model_name)
+                # 从 bundle 中获取实际的模型
+                self._model = model_bundle
+                self._demucs = model_bundle.get_model()
                 if self.device != "cpu":
-                    self._model.to(self.device)
-                self._model.eval()
+                    self._demucs.to(self.device)
+                self._demucs.eval()
             except ImportError:
                 raise ImportError(
                     "Demucs 未安装。请运行: uv add demucs"
                 )
+            except Exception as e:
+                raise RuntimeError(f"Failed to load Demucs model: {e}")
 
     def get_model_name(self) -> str:
         return f"Demucs-{self.model_name}"
 
     def get_available_tracks(self) -> list:
-        return self.DEFAULT_TRACKS.copy()
+        """获取可用的音轨列表"""
+        if self._demucs is not None:
+            return list(self._demucs.sources)
+        return list(self.DEFAULT_TRACKS)
 
     def separate(self, audio_path: str, **kwargs) -> SeparationResult:
         """
@@ -123,34 +132,39 @@ class DemucsSeparator(BaseSeparator):
         # 转换为模型输入格式
         audio_tensor = self._prepare_tensor(audio)
 
-        # 执行分离
-        with np.errstate(divide='ignore', invalid='ignore'):
-            separated = self._model(audio_tensor)
+        # 执行分离 - Demucs 4.0+ API
+        import torch
+        with torch.no_grad():
+            sources = self._demucs(audio_tensor)
 
         # 提取各音轨到结果对象
         result = self._extract_tracks(separated)
 
         return result
 
-    def _extract_tracks(self, separated: "torch.Tensor") -> SeparationResult:
+    def _extract_tracks(self, sources: "torch.Tensor") -> SeparationResult:
         """
         从模型输出提取各音轨
 
         Args:
-            separated: 模型输出张量，形状为 (batch, tracks, samples)
+            sources: 模型输出张量，形状为 (batch, tracks, samples)
+                     tracks 顺序由 Demucs 定义
 
         Returns:
             SeparationResult: 包含各音轨的结果
         """
         result = SeparationResult(sample_rate=self.sample_rate)
 
+        # 获取 Demucs 定义的音轨顺序
+        tracks = self._demucs.sources
+
         # 确保输出在 CPU 上并转为 numpy
-        separated_np = separated[0].cpu().numpy()  # (tracks, samples)
+        sources_np = sources[0].cpu().numpy()  # (tracks, samples)
 
         # 提取各音轨
-        for i, track_name in enumerate(self.DEFAULT_TRACKS):
-            if i < len(separated_np):
-                track_data = separated_np[i]
+        for i, track_name in enumerate(tracks):
+            if i < len(sources_np):
+                track_data = sources_np[i]
 
                 # 直接赋值给 result 对象
                 if track_name == "vocals":

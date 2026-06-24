@@ -148,16 +148,27 @@ class Config:
                 if is_dataclass(current) and isinstance(value, dict):
                     cls._apply_dataclass(current, value)
                 elif value is not None:
-                    # 类型转换
-                    if isinstance(current, bool):
-                        value = bool(value)
-                    elif isinstance(current, int):
-                        value = int(value)
-                    elif isinstance(current, float):
-                        value = float(value)
-                    elif isinstance(current, list):
-                        value = list(value)
-                    setattr(dataclass_obj, key, value)
+                    # 安全类型转换
+                    try:
+                        if isinstance(current, bool):
+                            # 特殊处理 bool：接受字符串 "true"/"false"
+                            if isinstance(value, str):
+                                value = value.lower() in ('true', '1', 'yes')
+                            else:
+                                value = bool(value)
+                        elif isinstance(current, int):
+                            if isinstance(value, (int, float)):
+                                value = int(value)
+                            elif isinstance(value, str):
+                                value = int(float(value))
+                        elif isinstance(current, float):
+                            value = float(value)
+                        elif isinstance(current, list) and not isinstance(value, list):
+                            value = [value]
+                        setattr(dataclass_obj, key, value)
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"配置类型转换失败 {key}: {e}")
+                        # 忽略转换失败，保持原值
 
     def save(self, path: Optional[Union[str, Path]] = None) -> None:
         """
@@ -221,10 +232,17 @@ class Config:
             return default
 
         # 类型转换
-        if value_type is not None and not isinstance(value, value_type):
+        if value_type is not None:
+            if isinstance(value, value_type):
+                return value
             try:
-                value = value_type(value)
-            except (ValueError, TypeError):
+                if value_type == bool:
+                    # 特殊处理 bool
+                    if isinstance(value, str):
+                        return value.lower() in ('true', '1', 'yes')
+                    return bool(value)
+                return value_type(value)
+            except (ValueError, TypeError, AttributeError):
                 return default
 
         return value

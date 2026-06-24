@@ -174,16 +174,23 @@ class RVCConverter(BaseVoiceConverter, LazyImportMixin):
             self.unload()
             raise ValueError(f"Failed to load RVC model: {e}")
     
-    def _load_checkpoint(self, checkpoint_path: str):
-        """加载模型检查点"""
-        torch = self._lazy_import_module("torch")
-        
-        # 加载权重
-        checkpoint = torch.load(
+    def _load_checkpoint(self, checkpoint_path: str, explicit_unsafe: bool = False):
+        """
+        加载模型检查点
+
+        Args:
+            checkpoint_path: 模型文件路径
+            explicit_unsafe: 是否显式允许不安全加载
+        """
+        # 使用 SafeModelLoader 加载模型
+        from src.security.model_loader import SafeModelLoader
+
+        loader = SafeModelLoader(device=self._device)
+        checkpoint = loader.load(
             checkpoint_path,
-            map_location="cpu"
+            explicit_unsafe=explicit_unsafe
         )
-        
+
         if isinstance(checkpoint, dict):
             # RVC v2 格式
             if "model" in checkpoint:
@@ -192,7 +199,7 @@ class RVCConverter(BaseVoiceConverter, LazyImportMixin):
                 self._model = checkpoint["weight"]
             else:
                 self._model = checkpoint
-            
+
             # 提取配置信息
             if "config" in checkpoint:
                 self._config = checkpoint["config"]
