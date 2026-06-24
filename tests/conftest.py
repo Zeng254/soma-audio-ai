@@ -135,3 +135,53 @@ def mock_stereo_audio():
     right = np.sin(2 * np.pi * 880 * t)
     audio = np.stack([left, right], axis=0).astype(np.float32)
     return audio, sample_rate
+
+
+# ============================================================================
+# 兼容性别名 fixtures
+# ============================================================================
+
+@pytest.fixture
+def temp_dir(tmp_path, temp_audio_dir):
+    """临时目录（兼容性别名）"""
+    return tmp_path
+
+
+@pytest.fixture
+def temp_config_dir(tmp_path):
+    """临时配置目录"""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    return config_dir
+
+
+@pytest.fixture
+def sample_rate():
+    """标准采样率"""
+    return 44100
+
+
+@pytest.fixture
+def mock_audio_file(temp_audio_dir):
+    """创建临时音频文件"""
+    import numpy as np
+    import soundfile as sf
+    
+    sample_rate = 44100
+    duration = 1.0
+    t = np.linspace(0, duration, int(sample_rate * duration))
+    audio = np.sin(2 * np.pi * 440 * t).astype(np.float32)
+    
+    file_path = temp_audio_dir / "test.wav"
+    sf.write(str(file_path), audio, sample_rate)
+    return file_path
+
+
+@pytest.fixture
+def mock_model_file(temp_model_dir):
+    """创建临时模型文件（模拟 pickle）"""
+    import torch
+    
+    file_path = temp_model_dir / "model.pth"
+    torch.save({"model": torch.randn(10, 10)}, str(file_path))
+    return file_path

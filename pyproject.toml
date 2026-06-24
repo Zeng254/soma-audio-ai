@@ -65,6 +65,7 @@ dev = [
     "pytest-mock>=3.12,<4",
     "black>=24.0,<25",
     "ruff>=0.1,<1",
+    "pyinstaller>=6.0,<7",
 ]
 
 [tool.uv]
