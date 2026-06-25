@@ -26,9 +26,10 @@ from .base import (
     EngineCapability,
 )
 from .sovits_models import SimpleVITSModel, create_vits_model_from_checkpoint
+from src.exceptions import SOMAModelError, SOMAValidationError, SOMAConversionError, SOMADependencyError
 
 
-class SoVITSDependencyError(ImportError):
+class SoVITSDependencyError(SOMADependencyError):
     """SoVITS 依赖缺失错误"""
     pass
 
@@ -121,6 +122,11 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         self._hubert_model = None    # HubERT 特征提取器
         self._feature_layer = 12      # HubERT 特征层
         self._feature_kind = None     # 特征类型
+        
+        # F0 融合投影层缓存
+        self._f0_proj_layer = None    # 缓存的 Linear 层
+        self._f0_proj_input_dim = 0   # 缓存的输入维度
+        self._f0_proj_output_dim = 0  # 缓存的输出维度
     
     def load_model(
         self,
@@ -159,7 +165,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             config_path = self._find_config_file(model_file)
         
         if config_path is None:
-            raise ValueError("config.json not found. Please provide config_path.")
+            raise SOMAValidationError("config.json not found. Please provide config_path.")
         
         # 检查依赖
         missing = self._check_all_dependencies()
@@ -208,7 +214,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             
         except Exception as e:
             self.unload()
-            raise ValueError(f"Failed to load SoVITS model: {e}")
+            raise SOMAModelError(f"Failed to load SoVITS model: {e}")
     
     def _find_config_file(self, model_file: Path) -> Optional[str]:
         """查找配置文件"""
@@ -545,45 +551,6 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
     def _remove_dc_offset_sovits(self, audio: np.ndarray) -> np.ndarray:
         """去除直流分量"""
         return audio - np.mean(audio)
-    
-    def _trim_silence_sovits(
-        self,
-        audio: np.ndarray,
-        sample_rate: int,
-        top_db: int = 40
-    ) -> np.ndarray:
-        """去除静音"""
-        librosa = self._lazy_import_module("librosa")
-        if librosa is None:
-            return audio
-        
-        try:
-            # 计算能量
-            hop_length = 512
-            rms = librosa.feature.rms(
-                y=audio,
-                frame_length=2048,
-                hop_length=hop_length
-            )[0]
-            
-            # 找到非静音区域
-            threshold = librosa.db_to_amplitude(-top_db)
-            non_silent = np.where(rms > threshold)[0]
-            
-            if len(non_silent) == 0:
-                return audio
-            
-            # 扩展边缘
-            frame_start = max(0, non_silent[0] - 5)
-            frame_end = min(len(rms), non_silent[-1] + 5)
-            
-            sample_start = frame_start * hop_length
-            sample_end = min(len(audio), frame_end * hop_length + 1024)
-            
-            return audio[sample_start:sample_end]
-            
-        except Exception:
-            return audio
     
     def _preprocess_resample_sovits(
         self,
@@ -1047,8 +1014,18 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         
         # 投影回原始维度
         if fused.shape[-1] != features.shape[-1]:
-            proj = torch.nn.Linear(fused.shape[-1], features.shape[-1]).to(features.device)
-            fused = proj(fused)
+            input_dim = fused.shape[-1]
+            output_dim = features.shape[-1]
+            
+            # 检查缓存是否需要重建
+            if (self._f0_proj_layer is None or 
+                self._f0_proj_input_dim != input_dim or 
+                self._f0_proj_output_dim != output_dim):
+                self._f0_proj_layer = torch.nn.Linear(input_dim, output_dim).to(features.device)
+                self._f0_proj_input_dim = input_dim
+                self._f0_proj_output_dim = output_dim
+            
+            fused = self._f0_proj_layer(fused)
         
         return fused
     
@@ -1277,7 +1254,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         try:
             checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
         except Exception as e:
-            raise ValueError(f"Failed to load model checkpoint: {e}")
+            raise SOMAModelError(f"Failed to load model checkpoint: {e}")
 
         # 从检查点创建 VITS 模型
         self._vits_model = create_vits_model_from_checkpoint(checkpoint, self._hps)
@@ -1346,7 +1323,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             ConversionResult: 转换结果
         """
         if not self._is_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+            raise SOMAModelError("Model not loaded. Call load_model() first.")
         
         # 验证输入
         audio = self._validate_audio(audio)
@@ -1391,7 +1368,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             return result
             
         except Exception as e:
-            raise RuntimeError(f"SoVITS conversion failed: {e}")
+            raise SOMAConversionError(f"SoVITS conversion failed: {e}")
     
     def _resample(
         self,
@@ -1569,7 +1546,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                     # 兼容旧接口
                     output_audio = self._net_g(mel_spec_tensor, transformed_f0)
                 else:
-                    raise ValueError("No VITS model loaded")
+                    raise SOMAModelError("No VITS model loaded")
 
                 # 转换为 numpy
                 if isinstance(output_audio, torch.Tensor):
@@ -1773,7 +1750,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         if speaker_id in self._speaker_map:
             self._current_speaker_id = speaker_id
         else:
-            raise ValueError(f"Invalid speaker ID: {speaker_id}")
+            raise SOMAValidationError(f"Invalid speaker ID: {speaker_id}")
     
     def get_speaker_count(self) -> int:
         """获取模型支持的说话人数量"""

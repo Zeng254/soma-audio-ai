@@ -345,6 +345,55 @@ class BaseVoiceConverter(ABC):
             return 20 * np.log10(rms)
         return -float('inf')
     
+    def _trim_silence(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        top_db: int = 40
+    ) -> np.ndarray:
+        """
+        去除音频中的静音部分
+        
+        Args:
+            audio: 输入音频
+            sample_rate: 采样率
+            top_db: 静音阈值 (dB)
+            
+        Returns:
+            去除静音后的音频
+        """
+        librosa = self._lazy_import_module("librosa")
+        if librosa is None:
+            return audio
+        
+        try:
+            # 计算能量
+            hop_length = 512
+            rms = librosa.feature.rms(
+                y=audio,
+                frame_length=2048,
+                hop_length=hop_length
+            )[0]
+            
+            # 找到非静音区域
+            threshold = librosa.db_to_amplitude(-top_db)
+            non_silent = np.where(rms > threshold)[0]
+            
+            if len(non_silent) == 0:
+                return audio
+            
+            # 扩展边缘
+            frame_start = max(0, non_silent[0] - 5)
+            frame_end = min(len(rms), non_silent[-1] + 5)
+            
+            sample_start = frame_start * hop_length
+            sample_end = min(len(audio), frame_end * hop_length + 1024)
+            
+            return audio[sample_start:sample_end]
+            
+        except Exception:
+            return audio
+    
     def __repr__(self) -> str:
         status = "loaded" if self._is_loaded else "empty"
         return f"{self.__class__.__name__}({self.device}, {status})"

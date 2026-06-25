@@ -14,7 +14,9 @@ RVC (Retrieval-Based Voice Conversion) Converter
 from __future__ import annotations
 
 import json
+import logging
 import os
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -23,7 +25,10 @@ import numpy as np
 
 from src.voice_converters.base import BaseVoiceConverter, ConversionResult
 from src.voice_converters.base import ConversionParams, EngineCapability
+from src.exceptions import SOMAModelError, SOMAValidationError, SOMAConversionError
 from src.voice_converters.rvc_models import SimpleRVCModel, create_rvc_model_from_checkpoint
+
+logger = logging.getLogger(__name__)
 
 
 class RVCConverter(BaseVoiceConverter, EngineCapability):
@@ -94,9 +99,10 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         self._pe_model: Any = None
         self._ap_model: Any = None
 
-        # 缓存
-        self._hubert_cache: Dict[str, np.ndarray] = {}
-        self._f0_cache: Dict[str, np.ndarray] = {}
+        # 缓存 (LRU, 最多10条)
+        self._hubert_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._f0_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._cache_max_size = 10
 
     def _init_device(self):
         """初始化设备"""
@@ -238,6 +244,9 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
                     self._hifigan_model = checkpoint["vocoder"]
                 elif "generator" in checkpoint:
                     self._hifigan_model = checkpoint["generator"]
+                elif "weight" in checkpoint:
+                    # 兼容某些 RVC 模型把权重存在 weight 键下
+                    self._hifigan_model = checkpoint["weight"]
             else:
                 self._hifigan_model = None
 
@@ -255,7 +264,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
 
         except Exception as e:
             self.unload()
-            raise ValueError(f"Failed to load RVC model: {e}")
+            raise SOMAModelError(f"Failed to load RVC model: {e}")
 
     def unload(self):
         """卸载模型，释放内存"""
@@ -280,32 +289,36 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
     def convert(
         self,
         audio: np.ndarray,
-        sample_rate: int = 44100,
-        pitch_shift: float = 0,
-        pitch_algo: str = "pm",
+        sample_rate: int,
+        params: Optional['ConversionParams'] = None,
         **kwargs
     ) -> ConversionResult:
         """
-        执行声音转换
+        执行 RVC 声音转换
 
         Args:
             audio: 输入音频数据
             sample_rate: 输入采样率
-            pitch_shift: 音高变换 (半音)
-            pitch_algo: F0 提取算法
-            **kwargs: 其他参数
+            params: 转换参数
+            **kwargs: 参数覆盖
 
         Returns:
             转换结果
         """
         if not self._is_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+            raise SOMAModelError("Model not loaded. Call load_model() first.")
 
         # 参数处理
-        if pitch_shift != 0:
-            self.pitch_shift = pitch_shift
-        if pitch_algo:
-            self.pitch_algo = pitch_algo
+        if params:
+            self.pitch_shift = params.pitch_shift
+            if hasattr(params, 'pitch_algo') and params.pitch_algo:
+                self.pitch_algo = params.pitch_algo
+
+        # kwargs 覆盖
+        if 'pitch_shift' in kwargs:
+            self.pitch_shift = kwargs['pitch_shift']
+        if 'pitch_algo' in kwargs:
+            self.pitch_algo = kwargs['pitch_algo']
 
         # 验证音频
         audio = self._validate_audio(audio)
@@ -322,7 +335,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
 
         return ConversionResult(
             audio=output,
-            sample_rate=target_sr,
+            sampling_rate=target_sr,
             duration=len(output) / target_sr,
         )
 
@@ -430,41 +443,6 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         """去除直流分量"""
         return audio - np.mean(audio)
 
-    def _trim_silence(
-        self,
-        audio: np.ndarray,
-        sample_rate: int,
-        top_db: int = 40
-    ) -> np.ndarray:
-        """去除静音"""
-        librosa = self._lazy_import_module("librosa")
-        if librosa is None:
-            return audio
-
-        # 计算能量
-        hop_length = 512
-        rms = librosa.feature.rms(
-            y=audio,
-            frame_length=2048,
-            hop_length=hop_length
-        )[0]
-
-        # 找到非静音区域
-        threshold = librosa.db_to_amplitude(-top_db)
-        non_silent = np.where(rms > threshold)[0]
-
-        if len(non_silent) == 0:
-            return audio
-
-        # 扩展边缘
-        frame_start = max(0, non_silent[0] - 5)
-        frame_end = min(len(rms), non_silent[-1] + 5)
-
-        sample_start = frame_start * hop_length
-        sample_end = min(len(audio), frame_end * hop_length + 1024)
-
-        return audio[sample_start:sample_end]
-
     def _preprocess_resample(
         self,
         audio: np.ndarray,
@@ -510,6 +488,12 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         hop_length = self.hop_length
         n_frames = (len(audio) - 2048) // hop_length + 1
 
+        # 检查缓存
+        cache_key = f"{len(audio)}_{sample_rate}"
+        if cache_key in self._f0_cache:
+            self._f0_cache.move_to_end(cache_key)
+            return self._f0_cache[cache_key]
+
         # 尝试不同的 F0 提取方法
         methods = [
             ("harvest", self._extract_f0_harvest),
@@ -524,12 +508,21 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
                 if f0 is not None and len(f0) > 0:
                     # 确保长度正确
                     f0 = self._align_f0_length(f0, n_frames)
+                    # 缓存 (LRU 淘汰)
+                    self._f0_cache[cache_key] = f0
+                    if len(self._f0_cache) > self._cache_max_size:
+                        self._f0_cache.popitem(last=False)
                     return f0
             except Exception:
                 continue
 
         # 降级方案: 使用自相关
-        return self._extract_f0_autocorr(audio, sample_rate, hop_length, n_frames)
+        f0 = self._extract_f0_autocorr(audio, sample_rate, hop_length, n_frames)
+        # 缓存 (LRU 淘汰)
+        self._f0_cache[cache_key] = f0
+        if len(self._f0_cache) > self._cache_max_size:
+            self._f0_cache.popitem(last=False)
+        return f0
 
     def _extract_f0_harvest(
         self,
@@ -758,6 +751,8 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         # 检查缓存
         cache_key = f"{len(audio)}_{sample_rate}"
         if cache_key in self._hubert_cache:
+            # 移动到末尾 (最近使用)
+            self._hubert_cache.move_to_end(cache_key)
             return self._hubert_cache[cache_key]
 
         # 尝试 HubERT
@@ -767,8 +762,10 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             # 降级到 MFCC
             features = self._extract_mfcc_features_fallback(audio, sample_rate)
 
-        # 缓存
+        # 缓存 (LRU 淘汰)
         self._hubert_cache[cache_key] = features
+        if len(self._hubert_cache) > self._cache_max_size:
+            self._hubert_cache.popitem(last=False)
 
         return features
 
@@ -867,6 +864,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         sample_rate: int
     ) -> np.ndarray:
         """纯 numpy MFCC 提取"""
+        logger.warning("MFCC fallback: Using random noise for feature extraction. This is a degraded mode, not real inference.")
         # 简化的 MFCC 实现
         n_frames = (len(audio) - 2048) // self.hop_length + 1
         return np.random.randn(80, n_frames).astype(np.float32) * 0.1
@@ -969,9 +967,12 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             torch.zeros_like(f0)
         )
 
-        # 计算相位 (累积)
-        phase = torch.cumsum(torch.ones_like(period), dim=0)
-        phase = phase % period
+        # 计算相位 (累积 2π * f0 / sample_rate)
+        import math
+        phase_increment = 2 * math.pi * f0 / sample_rate
+        phase = torch.cumsum(phase_increment, dim=0)
+        # 归一化到 [0, 2π)
+        phase = phase % (2 * math.pi)
 
         return torch.cat([period, phase], dim=-1)
 
@@ -990,6 +991,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         Returns:
             梅尔频谱
         """
+        logger.warning("Fallback synthesis: Using random noise for mel spectrogram. This is a degraded mode, not real inference.")
         n_frames = features.shape[1]
         # 返回随机梅尔频谱 (作为降级)
         return np.random.randn(128, n_frames).astype(np.float32) * 0.1
@@ -1185,7 +1187,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
     def _validate_audio(self, audio: np.ndarray) -> np.ndarray:
         """验证音频格式"""
         if audio is None or len(audio) == 0:
-            raise ValueError("Empty audio input")
+            raise SOMAValidationError("Empty audio input")
 
         if not isinstance(audio, np.ndarray):
             audio = np.array(audio)
