@@ -626,12 +626,14 @@ def parse_input(input_str: str) -> Dict[str, Any]:
         return {"text": input_str}
 
 def start_http_server(port):
-    workers = 1
     reload = False
+    workers = None
     if graph_helper.is_dev_env():
         reload = True
+    else:
+        workers = 1
 
-    logger.info(f"Start HTTP Server, Port: {port}, Workers: {workers}")
+    logger.info(f"Start HTTP Server, Port: {port}, Reload: {reload}, Workers: {workers}")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload, workers=workers)
 
 if __name__ == "__main__":

@@ -346,22 +346,23 @@ class AudioSaver:
         """
         Detect whether audio might be channel_first format
 
-        Detectionmethod：
-        1. If first dimension <= 8, likely channel count
-        2. If second dimension is sample rate multiple, likely sample count
+        Detection method:
+        1. If first dimension <= 8, likely channel count (channel_first)
+        2. If first dimension is a common sample rate, likely channel_last format
         """
         if audio.ndim != 2:
             return False
 
-        channels, samples = audio.shape
+        dim0, dim1 = audio.shape
 
-        # Channel count usually <= 8
-        if channels > 8:
+        COMMON_SAMPLE_RATES = {8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 96000}
+
+        # If first dimension is a common sample rate, this is likely channel_last (samples, channels)
+        if dim0 in COMMON_SAMPLE_RATES and dim1 <= 8:
             return False
 
-        # If first dimension is common sample rate, dimensions may be swapped
-        COMMON_SAMPLE_RATES = {8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 96000}
-        if channels in COMMON_SAMPLE_RATES and samples <= 8:
+        # If first dimension <= 8 and second dimension is large, likely channel_first (channels, samples)
+        if dim0 <= 8 and dim1 > dim0 * 2:
             return True
 
         return False

@@ -412,7 +412,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             return result
 
         except Exception as e:
-            self._logger.warning(f"RVC inference degraded: {e}")
+            logger.warning(f"RVC inference degraded: {e}")
             return self._safe_degrade_output(audio)
 
     # ============================================================
@@ -958,7 +958,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
                     return self._fallback_synthesis(features, f0)
 
         except Exception as e:
-            self._logger.debug(f"Model inference failed: {e}")
+            logger.debug(f"Model inference failed: {e}")
             return self._fallback_synthesis(features, f0)
 
     def _encode_f0_pitch(

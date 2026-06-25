@@ -271,7 +271,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             return self._hubert_model
             
         except Exception as e:
-            self._logger.warning(f"Failed to load HubERT model: {e}")
+            logger.warning(f"Failed to load HubERT model: {e}")
             return None
     
     def _load_vits_decoder(self) -> bool:
@@ -324,11 +324,11 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                 return True
                 
             except Exception as e:
-                self._logger.warning(f"Failed to create VITS decoder: {e}")
+                logger.warning(f"Failed to create VITS decoder: {e}")
                 return False
                 
         except Exception as e:
-            self._logger.warning(f"Failed to load VITS decoder: {e}")
+            logger.warning(f"Failed to load VITS decoder: {e}")
             return False
     
     def _create_vits_decoder(self, hidden_size: int) -> "torch.nn.Module":
@@ -438,7 +438,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             return self._vocoder
             
         except Exception as e:
-            self._logger.warning(f"Failed to load HiFi-GAN: {e}")
+            logger.warning(f"Failed to load HiFi-GAN: {e}")
             return None
     
     # ============================================================
@@ -504,7 +504,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             return result
             
         except Exception as e:
-            self._logger.warning(f"SoVITS inference degraded: {e}")
+            logger.warning(f"SoVITS inference degraded: {e}")
             return self._safe_degrade_output_sovits(audio)
     
     # ============================================================
@@ -988,7 +988,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                 return mel_output.cpu().numpy()
                 
         except Exception as e:
-            self._logger.warning(f"VITS inference failed: {e}")
+            logger.warning(f"VITS inference failed: {e}")
             return np.zeros((128, n_frames))
     
     def _fuse_f0_features(
@@ -1553,7 +1553,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                     output_audio = output_audio.cpu().numpy()
 
         except Exception as e:
-            self._logger.debug(f"VITS inference failed: {e}")
+            logger.debug(f"VITS inference failed: {e}")
             # DowngradeUsesVocoder
             try:
                 output_audio = self._synthesize_with_vocoder(
