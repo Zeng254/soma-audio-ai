@@ -103,6 +103,14 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         self._hubert_cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self._f0_cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self._cache_max_size = 10
+        
+        # Lazy import status
+        self._has_librosa = False
+        self._has_transformers = False
+        self._has_torchaudio = False
+        
+        # Model path (set during load_model)
+        self._model_path = None
 
     def _init_device(self):
         """Initialize device"""
@@ -219,7 +227,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             ModelInfoDictionary
         """
         if device:
-            self._device = device
+            self.device = device
 
         model_path = Path(model_path)
 

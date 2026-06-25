@@ -127,6 +127,9 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         self._f0_proj_layer = None    # Cache Linear Layer
         self._f0_proj_input_dim = 0   # Cache input dimension
         self._f0_proj_output_dim = 0  # Cache output dimension
+        
+        # Lazy import status
+        self._has_librosa = False
     
     def load_model(
         self,
