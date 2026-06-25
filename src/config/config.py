@@ -1,11 +1,11 @@
 """
-SOMA 配置中心 - 主配置类
+SOMA Configuration Center - Main configuration class
 
-提供统一的配置管理系统，支持：
-- 从 JSON/YAML 文件加载和保存
-- 层级覆盖：默认值 < 配置文件 < 用户输入
-- 类型安全的 get/set 方法
-- 配置验证和自动补全
+Provides unified configuration management, supports:
+- Loading and saving from JSON/YAML files
+- Hierarchical override: Default values < Configuration file < User input
+- Type-safe get/set methods
+- Configuration validation and auto-completion
 """
 
 import os
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_asdict(obj):
-    """安全地将 dataclass 转换为字典（处理嵌套）"""
+    """Safely convert dataclass to dictionary (handle nesting)"""
     if hasattr(obj, 'to_dict') and callable(obj.to_dict):
         return obj.to_dict()
     if isinstance(obj, dict):
@@ -40,28 +40,28 @@ def _safe_asdict(obj):
 
 class Config:
     """
-    SOMA 配置管理类
+    SOMA Configuration Management Class
 
-    支持层级覆盖机制：
-    1. 默认值 (defaults.py)
-    2. 配置文件 (JSON/YAML)
-    3. 用户输入 (运行时覆盖)
+    Supports hierarchical override mechanism:
+    1. Default values (defaults.py)
+    2. Configuration file (JSON/YAML)
+    3. User input (runtime override)
 
-    示例:
-        # 加载配置
+    Example:
+        # Load configuration
         config = Config.load("~/.soma/config.json")
 
-        # 获取值
+        # Get value
         sample_rate = config.get("audio_utils.default_sample_rate")
         device = config.get("separators.device", default="cuda")
 
-        # 设置值
+        # Set value
         config.set("separators.device", "cuda")
 
-        # 保存配置
+        # Save configuration
         config.save()
 
-        # 重置为默认
+        # Reset to default
         config.reset()
     """
 
@@ -71,18 +71,18 @@ class Config:
         user_config: Optional[Dict[str, Any]] = None
     ):
         """
-        初始化配置
+        Initialize configuration
 
         Args:
-            base_config: 基础配置（默认配置）
-            user_config: 用户配置（会覆盖基础配置）
+            base_config: Base configuration (default configuration)
+            user_config: User configuration (overrides base configuration)
         """
         if base_config is None:
             self._base = copy.deepcopy(DEFAULT_CONFIG)
         elif isinstance(base_config, dict):
             self._base = base_config
         elif is_dataclass(base_config) and not isinstance(base_config, type):
-            # 如果是 dataclass 实例，转换为字典
+            # If it's a dataclass instance, convert to dictionary
             self._base = asdict(base_config)
         else:
             self._base = copy.deepcopy(DEFAULT_CONFIG)
@@ -90,7 +90,7 @@ class Config:
         self._path: Optional[Path] = None
         self._loaded = False
         
-        # 应用用户配置到基础配置
+        # Apply user configuration to base configuration
         if self._user:
             self._apply_user_config(self._base, self._user)
 
@@ -101,14 +101,14 @@ class Config:
         auto_create: bool = True
     ) -> "Config":
         """
-        从文件加载配置
+        Load configuration from file
 
         Args:
-            path: 配置文件路径
-            auto_create: 文件不存在时是否自动创建默认配置
+            path: Configuration file path
+            auto_create: Whether to auto-create default configuration if file doesn't exist
 
         Returns:
-            Config 实例
+            Config instance
         """
         path = Path(path).expanduser()
         config = cls()
@@ -123,17 +123,17 @@ class Config:
                         config._user = json.load(f)
                 config._path = path
                 config._loaded = True
-                logger.info(f"配置已从 {path} 加载")
+                logger.info(f"Configuration loaded from {path}")
             except Exception as e:
-                logger.warning(f"加载配置文件失败: {e}，使用默认配置")
+                logger.warning(f"Failed to load configuration file: {e}, using default configuration")
                 config._user = {}
         elif auto_create:
-            # 自动创建默认配置文件
+            # Auto-create default configuration file
             config._path = path
             config.save()
-            logger.info(f"已创建默认配置文件: {path}")
+            logger.info(f"Created default configuration file: {path}")
         else:
-            logger.info("使用默认配置")
+            logger.info("Using default configuration")
 
         return config
 
@@ -143,8 +143,8 @@ class Config:
         base: Any,
         user: Dict[str, Any]
     ) -> None:
-        """将用户配置应用到基础配置对象（支持字典和dataclass）"""
-        # 处理 dataclass 对象
+        """Apply user configuration to base configuration object (supports dictionary and dataclass)"""
+        # Process dataclass object
         if is_dataclass(base) and not isinstance(base, type):
             base_dict = asdict(base) if hasattr(base, '__dataclass_fields__') else {}
             for key, value in user.items():
@@ -153,7 +153,7 @@ class Config:
                     if isinstance(current, dict) and isinstance(value, dict):
                         cls._apply_dict(current, value)
                     elif value is not None:
-                        # 类型安全转换
+                        # Type-safe conversion
                         try:
                             if isinstance(current, bool):
                                 if isinstance(value, str):
@@ -166,8 +166,8 @@ class Config:
                                 value = float(value)
                             setattr(base, key, value)
                         except (ValueError, TypeError) as e:
-                            logger.warning(f"配置类型转换失败 {key}: {e}")
-        # 处理字典对象
+                            logger.warning(f"Configuration type conversion failed {key}: {e}")
+        # ProcessDictionaryObject
         elif isinstance(base, dict):
             for key, value in user.items():
                 if key in base:
@@ -182,13 +182,13 @@ class Config:
         base_dict: Dict[str, Any],
         user_dict: Dict[str, Any]
     ) -> None:
-        """将字典值应用到字典对象"""
+        """Apply dictionary values to dictionary object"""
         for key, value in user_dict.items():
             if key in base_dict:
                 if isinstance(base_dict[key], dict) and isinstance(value, dict):
                     cls._apply_dict(base_dict[key], value)
                 elif value is not None:
-                    # 安全类型转换
+                    # Type-safe conversion
                     try:
                         current = base_dict[key]
                         if isinstance(current, bool):
@@ -204,24 +204,24 @@ class Config:
                             value = [value]
                         base_dict[key] = value
                     except (ValueError, TypeError) as e:
-                        logger.warning(f"配置类型转换失败 {key}: {e}")
+                        logger.warning(f"Configuration type conversion failed {key}: {e}")
 
     def save(self, path: Optional[Union[str, Path]] = None) -> None:
         """
-        保存配置到文件
+        Save configuration to file
 
         Args:
-            path: 保存路径，默认使用加载时的路径
+            path: Save path, defaults to the path used during load
         """
         save_path = Path(path or self._path).expanduser() if self._path or path else None
 
         if not save_path:
-            raise ConfigError("未指定保存路径")
+            raise ConfigError("Save path not specified")
 
-        # 确保目录存在
+        # Ensure directory exists
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 转换配置为字典
+        # Convert configuration to dictionary
         config_dict = self.to_dict()
 
         try:
@@ -231,9 +231,9 @@ class Config:
                     yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
                 else:
                     json.dump(config_dict, f, indent=2, ensure_ascii=False)
-            logger.info(f"配置已保存到 {save_path}")
+            logger.info(f"Configuration saved to {save_path}")
         except Exception as e:
-            raise ConfigError(f"保存配置失败: {e}")
+            raise ConfigError(f"Failed to save configuration: {e}")
 
     def get(
         self,
@@ -242,38 +242,38 @@ class Config:
         value_type: Optional[Type[T]] = None
     ) -> Optional[T]:
         """
-        获取配置值
+        Get configuration value
 
         Args:
-            key: 配置键，支持点号分隔的路径，如 "separators.device"
-            default: 默认值
-            value_type: 期望的类型
+            key: Configuration key, supports dot-separated path, e.g. "separators.device"
+            default: Default value
+            value_type: Expected type
 
         Returns:
-            配置值
+            Configuration value
 
-        示例:
+        Example:
             config.get("audio_utils.default_sample_rate")
             config.get("separators.device", default="cuda")
         """
-        # 先从用户配置获取
+        # First try to get from user configuration
         value = self._get_nested(self._user, key)
 
-        # 如果用户配置没有，从基础配置获取
+        # If not in user configuration, get from base configuration
         if value is None:
             value = self._get_nested(self._base, key)
 
-        # 如果还是没有，返回默认值
+        # If still not found, return default value
         if value is None:
             return default
 
-        # 类型转换
+        # Type conversion
         if value_type is not None:
             if isinstance(value, value_type):
                 return value
             try:
                 if value_type == bool:
-                    # 特殊处理 bool
+                    # Special handling for bool
                     if isinstance(value, str):
                         return value.lower() in ('true', '1', 'yes')
                     return bool(value)
@@ -285,13 +285,13 @@ class Config:
 
     def set(self, key: str, value: Any) -> None:
         """
-        设置配置值
+        Set configuration value
 
         Args:
-            key: 配置键，支持点号分隔的路径
-            value: 配置值
+            key: Configuration key, supports dot-separated path
+            value: Configuration value
         """
-        # 设置到基础配置
+        # Set to base configuration
         keys = key.split('.')
         target = self._base
 
@@ -301,48 +301,48 @@ class Config:
                     target[k] = {}
                 target = target[k]
             elif hasattr(target, k):
-                # dataclass, 获取属性
+                # dataclass, get attribute
                 target = getattr(target, k)
             else:
-                # 创建新的字典
+                # Create new dictionary
                 new_target = {}
                 setattr(target, k, new_target)
                 target = new_target
 
-        # 设置最终值
+        # Set final value
         if isinstance(target, dict):
             target[keys[-1]] = value
         else:
             setattr(target, keys[-1], value)
 
-        logger.debug(f"配置已更新: {key} = {value}")
+        logger.debug(f"Configuration updated: {key} = {value}")
 
     def get_section(self, section: str) -> Any:
         """
-        获取配置节
+        Get configuration section
 
         Args:
-            section: 节名称，如 "separators", "audio_utils"
+            section: Section name, e.g. "separators", "audio_utils"
 
         Returns:
-            配置节对象
+            Configuration section object
         """
-        # 支持 dataclass 对象
+        # Supports dataclass object
         if hasattr(self._base, section):
             return getattr(self._base, section)
         if isinstance(self._base, dict) and section in self._base:
             return self._base[section]
-        raise ConfigError(f"配置节不存在: {section}")
+        raise ConfigError(f"Configuration section does not exist: {section}")
 
     def reset(self) -> None:
-        """重置为默认配置"""
+        """Reset to default configuration"""
         self._base = copy.deepcopy(DEFAULT_CONFIG)
         self._user = {}
-        logger.info("配置已重置为默认值")
+        logger.info("Configuration has been reset to default values")
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
-        # 支持 dataclass 对象
+        """Convert to dictionary"""
+        # Supports dataclass object
         if hasattr(self._base, 'to_dict') and callable(self._base.to_dict):
             return self._base.to_dict()
         if isinstance(self._base, dict):
@@ -351,19 +351,19 @@ class Config:
 
     def validate(self) -> bool:
         """
-        验证配置有效性
+        Validate configuration effectiveness
 
         Returns:
-            是否有效
+            Whether valid
         """
         errors = []
 
-        # 验证设备配置
+        # Validate device configuration
         device = self.get("separators.device")
         if device not in ["auto", "cpu", "cuda", "mps"]:
-            errors.append(f"无效的设备类型: {device}")
+            errors.append(f"Invalid device type: {device}")
 
-        # 验证数值范围
+        # Validate numeric ranges
         for key, min_val, max_val in [
             ("audio_utils.max_file_size_mb", 1, 10000),
             ("audio_utils.max_duration_seconds", 1, 86400),
@@ -371,18 +371,18 @@ class Config:
         ]:
             value = self.get(key)
             if value is not None and not (min_val <= value <= max_val):
-                errors.append(f"{key} 值 {value} 超出范围 [{min_val}, {max_val}]")
+                errors.append(f"{key} value {value} out of range [{min_val}, {max_val}]")
 
         if errors:
-            logger.error(f"配置验证失败: {errors}")
+            logger.error(f"Configuration validation failed: {errors}")
             return False
 
         return True
 
     @staticmethod
     def _get_nested(obj: Any, key: str) -> Optional[Any]:
-        """获取嵌套属性，只支持 '.' 作为分隔符"""
-        # 只使用 '.' 分隔符，不要替换 '_'
+        """Get nested attribute, only supports '.' as separator"""
+        # Only use '.' separator, do not replace '_'
         keys = key.split('.')
         for k in keys:
             if isinstance(obj, dict):
@@ -399,18 +399,18 @@ class Config:
 @lru_cache(maxsize=1)
 def get_config_path() -> Path:
     """
-    获取配置路径
+    Get configuration path
 
-    优先级：
-    1. 环境变量 SOMA_CONFIG_PATH
+    Priority:
+    1. Environment variable SOMA_CONFIG_PATH
     2. ~/.soma/config.json
     """
-    # 环境变量优先
+    # Environment variable takes priority
     env_path = os.environ.get("SOMA_CONFIG_PATH")
     if env_path:
         return Path(env_path).expanduser()
 
-    # 默认路径
+    # Default path
     default_path = Path("~/.soma/config.json").expanduser()
     return default_path
 
@@ -420,26 +420,26 @@ def get_config(
     auto_create: bool = True
 ) -> Config:
     """
-    获取全局配置实例
+    Get global configuration instance
 
     Args:
-        path: 配置路径，默认使用 get_config_path()
-        auto_create: 是否自动创建
+        path: Configuration path, defaults to get_config_path()
+        auto_create: Whether to auto-create
 
     Returns:
-        Config 实例
+        Config instance
     """
     if path is None:
         path = get_config_path()
     return Config.load(path, auto_create=auto_create)
 
 
-# 初始化配置模块
+# Initialize configuration module
 def init_config() -> Config:
-    """初始化并返回全局配置"""
+    """Initialize and return global configuration"""
     config = get_config()
 
-    # 确保必要的目录存在
+    # Ensure necessary directories exist
     app_dir = Path(config.get("soma.app_dir", "~/.soma")).expanduser()
     for subdir in ["models", "cache", "temp", "logs", "workspace"]:
         (app_dir / subdir).mkdir(parents=True, exist_ok=True)

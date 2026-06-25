@@ -170,7 +170,7 @@ class TestAudioValidator:
         result = validator.validate(str(large_file))
 
         assert result.is_valid is False
-        assert any("太大" in err for err in result.errors)
+        assert any("too large" in err for err in result.errors)
 
     def test_validate_sample_rate_range(self, temp_dir: Path):
         """测试：验证采样率范围"""
@@ -208,7 +208,7 @@ class TestAudioValidator:
         result = validator.validate("/nonexistent/file.wav")
 
         assert result.is_valid is False
-        assert any("不存在" in err for err in result.errors)
+        assert any("not found" in err or "does not exist" in err for err in result.errors)
 
     def test_format_detection_wav(self, temp_dir: Path):
         """测试：WAV 格式检测"""

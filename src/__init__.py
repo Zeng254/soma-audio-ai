@@ -1,75 +1,75 @@
 """
 SOMA - Smart Omnimedia Audio
 
-AI 驱动的音频处理工作站，集成声音分离、音效处理、音频生成等功能。
+AI driven audio processing workstation. Integrates voice separation, audio effects, audio generation and more.
 
-主要模块:
-- separators: 音频分离器（人声/伴奏分离）
-- effects: 音效处理器（均衡器、混响、音调变换）
-- converters: 格式转换器
-- voice_converters: 声音转换器（双引擎架构）
-- pipeline: 处理流水线
-- config: 配置中心
-- security: 安全验证
-- utils: 通用工具
+Main modules:
+- separators: Audio separator (Voice/accompaniment separation)
+- effects: Audio effects processor (Equalizer, reverb, pitch shifting)
+- converters: Format converter
+- voice_converters: Voice converter (Dual engine architecture)
+- pipeline: Processing pipeline
+- config: Configuration center
+- security: Security validation
+- utils: Common utilities
 
-使用示例:
+Usage example:
     from src import Config, AudioLoader
 
-    # 加载配置
+    # Load configuration
     config = Config.load("~/.soma/config.json")
 
-    # 加载音频
+    # Load audio
     loader = AudioLoader()
     audio, sr = loader.load("input.wav")
 """
 
-# 异常导出
+# Exception exports
 from src.exceptions import (
-    # 基类
+    # Base class
     SOMAError,
 
-    # 配置异常
+    # Configuration exceptions
     ConfigError,
     ConfigLoadError,
     ConfigValidationError,
     ConfigTypeError,
 
-    # 安全异常
+    # Security exceptions
     SecurityError,
     PathTraversalError,
     AudioValidationError,
     ModelSecurityError,
 
-    # 模型异常
+    # Model exceptions
     ModelError,
     ModelLoadError,
     ModelNotFoundError,
 
-    # 音频异常
+    # Audio exceptions
     AudioError,
     AudioLoadError,
     AudioFormatError,
 
-    # 分离器异常
+    # Separator exceptions
     SeparatorError,
     SeparationError,
 
-    # 声音转换异常
+    # Voice conversion exceptions
     VoiceConverterError,
     VoiceConversionError,
 
-    # 工具函数
+    # Utility functions
     is_soma_error,
     get_error_category,
     format_error,
 )
 
 __all__ = [
-    # 版本信息
+    # Version info
     "__version__",
 
-    # 异常
+    # Exceptions
     "SOMAError",
     "ConfigError",
     "ConfigLoadError",
@@ -89,6 +89,8 @@ __all__ = [
     "SeparationError",
     "VoiceConverterError",
     "VoiceConversionError",
+
+    # Utility functions
     "is_soma_error",
     "get_error_category",
     "format_error",

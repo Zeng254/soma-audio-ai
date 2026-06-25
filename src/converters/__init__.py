@@ -1,6 +1,6 @@
 """
 SOMA Audio Converters Module
-格式转换模块 - 提供音频格式转换功能
+Format conversion module - Provides audio format conversion
 """
 
 from .converter import AudioConverter, ConversionFormat

@@ -1,12 +1,12 @@
 """
-RVC 模型架构定义
+RVC Model architecture definition
 
-包含 RVC v1/v2 的核心模型结构：
-- RVCGenerator: RVC 主生成器
-- PitchEncoder: 音高编码器
-- HiFiGANGenerator: HiFi-GAN 声码器
+Contains RVC v1/v2 core model structures:
+- RVCGenerator: RVC Main generator
+- PitchEncoder: Pitch encoder
+- HiFiGANGenerator: HiFi-GAN Vocoder
 
-这些类用于加载和运行 RVC 模型推理。
+These classes are used to load and run RVC model inference.
 """
 
 from typing import Optional, Tuple, List, Any, Dict
@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 
 class ResBlock(nn.Module):
-    """残差块"""
+    """Residual block"""
 
     def __init__(self, channels: int, kernel_size: int = 3, dilation: Tuple[int, int, int] = (1, 3, 5)):
         super().__init__()
@@ -43,13 +43,13 @@ class ResBlock(nn.Module):
 
 class RVCGenerator(nn.Module):
     """
-    RVC 主生成器网络
+    RVC Main generatorNetwork
 
-    架构:
-    - 共享编码器 (Projection + ResBlocks)
-    - F0 条件调制
-    - 上采样解码器
-    - 最终卷积输出
+    Architecture:
+    - Shared encoder (Projection + ResBlocks)
+    - F0 condition modulation
+    - UpsampleDecoder
+    - Final convolution output
     """
 
     def __init__(
@@ -72,22 +72,22 @@ class RVCGenerator(nn.Module):
         self.hidden_channels = hidden_channels
         self.embed_dim = embed_dim
 
-        # 输入卷积
+        # Input convolution
         self.input_conv = nn.Conv1d(
-            in_channels + pitch_encoder_dim,  # 特征 + F0 编码
+            in_channels + pitch_encoder_dim,  # Feature + F0 Encode
             hidden_channels,
             kernel_size,
             padding=kernel_size // 2
         )
 
-        # 残差块
+        # Residual block
         self.resblocks = nn.ModuleList()
         for kernel_size in resblock_kernel_sizes:
             self.resblocks.append(
                 ResBlock(hidden_channels, kernel_size, resblock_dilation_sizes[0])
             )
 
-        # 上采样层
+        # UpsampleLayer
         self.upsamples = nn.ModuleList()
         self.upsample_channels = []
         channel = hidden_channels
@@ -104,7 +104,7 @@ class RVCGenerator(nn.Module):
             )
             channel = upsample_initial_channel // (2 ** (i + 1))
 
-        # 最终输出卷积
+        # Final output convolution
         self.output_conv = nn.Conv1d(
             channel,
             out_channels,
@@ -112,7 +112,7 @@ class RVCGenerator(nn.Module):
             padding=kernel_size // 2
         )
 
-        # 初始化
+        # Initialize
         self.apply(self._init_weights)
 
     def _init_weights(self, m: nn.Module):
@@ -127,19 +127,19 @@ class RVCGenerator(nn.Module):
         f0_embedding: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: 输入张量 [batch, channels, time]
-            f0_embedding: F0 嵌入 [batch, pitch_dim, time] (可选)
+            x: Input tensor [batch, channels, time]
+            f0_embedding: F0 embedding [batch, pitch_dim, time] (optional)
 
         Returns:
-            输出音频 [batch, out_channels, time * upsample_rate]
+            Output audio [batch, out_channels, time * upsample_rate]
         """
         if f0_embedding is not None:
-            # 将 F0 嵌入拼接到输入
+            # Concatenate F0 embedding to input
             if f0_embedding.shape[-1] != x.shape[-1]:
-                # 重采样 F0 嵌入以匹配
+                # Resample F0 embedding to match
                 f0_embedding = F.interpolate(
                     f0_embedding,
                     size=x.shape[-1],
@@ -147,20 +147,20 @@ class RVCGenerator(nn.Module):
                 )
             x = torch.cat([x, f0_embedding], dim=1)
 
-        # 输入卷积
+        # Input convolution
         x = self.input_conv(x)
         x = F.leaky_relu(x, 0.1)
 
-        # 残差块
+        # Residual block
         for resblock in self.resblocks:
             x = resblock(x)
 
-        # 上采样
+        # Upsample
         for upsample in self.upsamples:
             x = F.leaky_relu(x, 0.1)
             x = upsample(x)
 
-        # 输出卷积
+        # OutputConvolution
         x = F.leaky_relu(x, 0.1)
         x = self.output_conv(x)
         x = torch.tanh(x)
@@ -169,7 +169,7 @@ class RVCGenerator(nn.Module):
 
 
 class FlowDecoder(nn.Module):
-    """Flow 解码器 (用于某些 RVC 模型)"""
+    """Flow Decoder (for certain RVC models)"""
 
     def __init__(
         self,
@@ -184,13 +184,13 @@ class FlowDecoder(nn.Module):
         self.hidden_channels = hidden_channels
         self.out_channels = out_channels
 
-        # Wavenet 风格的解码器
+        # Wavenet style decoder
         self.input_conv = nn.Conv1d(in_channels, hidden_channels, 1)
 
         self.upsamples = nn.ModuleList()
         self.resblocks = nn.ModuleList()
 
-        # 上采样到原始长度
+        # Upsample to original length
         for i in range(4):
             stride = 2
             kernel = 4
@@ -210,11 +210,11 @@ class FlowDecoder(nn.Module):
                 ])
             )
 
-        # 输出层
+        # OutputLayer
         self.output_conv = nn.Conv1d(hidden_channels, out_channels, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """前向传播"""
+        """Forward pass"""
         x = self.input_conv(x)
         x = F.leaky_relu(x, 0.1)
 
@@ -222,7 +222,7 @@ class FlowDecoder(nn.Module):
             x = upsample(x)
             x = F.leaky_relu(x, 0.1)
 
-            # 残差连接
+            # ResidualConnection
             skip = x
             for conv in resblock:
                 x = F.leaky_relu(x, 0.1)
@@ -234,7 +234,7 @@ class FlowDecoder(nn.Module):
 
 
 class ConvFlowDecoder(nn.Module):
-    """ConvFlow 解码器"""
+    """ConvFlow Decoder"""
 
     def __init__(
         self,
@@ -246,14 +246,14 @@ class ConvFlowDecoder(nn.Module):
         super().__init__()
         self.num_flows = num_flows
 
-        # 条件编码
+        # ConditionEncode
         self.cond_encoder = nn.Sequential(
             nn.Conv1d(in_channels, hidden_channels, 3, padding=1),
             nn.ReLU(),
             nn.Conv1d(hidden_channels, hidden_channels, 3, padding=1),
         )
 
-        # Flow 层
+        # Flow Layer
         self.flows = nn.ModuleList()
         for _ in range(num_flows):
             self.flows.append(
@@ -263,18 +263,18 @@ class ConvFlowDecoder(nn.Module):
                 })
             )
 
-        # 输出投影
+        # Output projection
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        前向传播 (用于推理)
+        Forward pass (for inference)
 
         Args:
-            x: 输入特征 [batch, channels, time]
+            x: Input features [batch, channels, time]
 
         Returns:
-            梅尔频谱 [batch, n_mels, time]
+            Mel spectrum [batch, n_mels, time]
         """
         x = self.cond_encoder(x)
 
@@ -284,12 +284,12 @@ class ConvFlowDecoder(nn.Module):
             x = flow['norm'](x)
 
         x = self.proj(x)
-        # 返回均值 (不返回 log_scale 用于简化)
+        # Return mean (do not return log_scale for simplicity)
         return x[:, :x.shape[1] // 2, :]
 
 
 class SineGenerator(nn.Module):
-    """正弦生成器 (简化版声码器)"""
+    """Sine generator (simplified vocoder)"""
 
     def __init__(
         self,
@@ -310,61 +310,61 @@ class SineGenerator(nn.Module):
         mel_output: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        基于 F0 生成音频
+        Based on F0 GenerateAudio
 
         Args:
-            f0: F0 轨迹 [batch, 1, time]
-            mel_output: 梅尔频谱 [batch, n_mels, time] (可选)
+            f0: F0 trajectory [batch, 1, time]
+            mel_output: Mel spectrum [batch, n_mels, time] (optional)
 
         Returns:
-            音频波形 [batch, 1, time * hop_length]
+            Audio waveform [batch, 1, time * hop_length]
         """
         device = f0.device
         batch_size, _, time_steps = f0.shape
 
-        # 基础频率
+        # Base frequency
         freq = f0.squeeze(1)  # [batch, time]
 
-        # 生成时间步
+        # Generate time steps
         indices = torch.arange(time_steps, device=device).float().unsqueeze(0)
         indices = indices.repeat(batch_size, 1)
 
-        # 相位累积
+        # Phase accumulation
         phase = torch.cumsum(freq / self.sampling_rate, dim=1)
 
-        # 生成正弦波
+        # Generate sine wave
         sine_wave = torch.sin(2 * torch.pi * phase)
 
-        # 添加谐波
+        # Add harmonics
         if self.harmonic_num > 0:
             for h in range(2, self.harmonic_num + 2):
                 sine_wave += torch.sin(2 * torch.pi * phase * h) / h
 
-        # 添加噪声
+        # Add noise
         noise = torch.randn_like(sine_wave) * self.noise_std
         sine_wave = sine_wave * self.sine_amp + noise
 
-        # 重塑为 [batch, 1, time]
+        # Reshape to [batch, 1, time]
         return sine_wave.unsqueeze(1)
 
 
 class SimpleRVCModel(nn.Module):
     """
-    简化的 RVC 模型封装
+    Simplified RVC model encapsulation
 
-    支持多种 RVC 模型格式，自动适配
+    Supports multiple RVC model formats, auto-adapt
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__()
         self.config = config or {}
 
-        # 根据配置初始化网络
+        # Initialize network based on configuration
         self.sample_rate = self.config.get('sample_rate', 40000)
         self.hop_length = self.config.get('hop_length', 512)
         self.mel_channels = self.config.get('mel_channels', 128)
 
-        # 尝试构建网络
+        # Try to build network
         self.use_flow = self.config.get('use_flow', False)
 
         if self.use_flow:
@@ -382,23 +382,23 @@ class SimpleRVCModel(nn.Module):
 
     def forward(self, x: torch.Tensor, f0: torch.Tensor) -> torch.Tensor:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: HubERT 特征 [batch, 256, time]
-            f0: F0 轨迹 [batch, time] 或 [batch, 1, time]
+            x: HubERT Feature [batch, 256, time]
+            f0: F0 trajectory [batch, time] or [batch, 1, time]
 
         Returns:
-            输出音频或梅尔频谱
+            Output audio or mel spectrum
         """
-        # 调整 F0 维度
+        # Adjust F0 dimension
         if len(f0.shape) == 2:
             f0 = f0.unsqueeze(1)
 
-        # F0 编码
+        # F0 Encode
         f0_encoded = self._encode_f0(f0)
 
-        # 重采样 F0 编码以匹配特征长度
+        # Resample F0 encoding to match feature length
         if f0_encoded.shape[-1] != x.shape[-1]:
             f0_encoded = F.interpolate(
                 f0_encoded,
@@ -409,16 +409,16 @@ class SimpleRVCModel(nn.Module):
         if self.use_flow:
             output = self.flow_decoder(x)
         else:
-            # 生成器推理
+            # Generator inference
             output = self.generator(x, f0_encoded)
 
         return output
 
     def _encode_f0(self, f0: torch.Tensor) -> torch.Tensor:
-        """F0 音高编码"""
-        # 简单的 log 编码
+        """F0 pitch encoder"""
+        # Simple log encode
         f0_encoded = torch.log(f0 + 1e-6)
-        # 扩展维度以匹配
+        # Expand dimension to match
         if len(f0_encoded.shape) == 2:
             f0_encoded = f0_encoded.unsqueeze(1)
         return f0_encoded
@@ -428,7 +428,7 @@ class SimpleRVCModel(nn.Module):
         features: torch.Tensor,
         f0: torch.Tensor
     ) -> torch.Tensor:
-        """推理接口"""
+        """InferenceInterface"""
         return self.forward(features, f0)
 
 
@@ -437,16 +437,16 @@ def create_rvc_model_from_checkpoint(
     config: Optional[Dict[str, Any]] = None
 ) -> SimpleRVCModel:
     """
-    从检查点创建 RVC 模型
+    Create RVC model from checkpoint
 
     Args:
-        checkpoint: 模型检查点
-        config: 模型配置
+        checkpoint: Model checkpoint
+        config: ModelConfiguration
 
     Returns:
-        RVC 模型实例
+        RVC ModelInstance
     """
-    # 合并配置
+    # Merge configuration
     if isinstance(checkpoint, dict):
         if 'config' in checkpoint and config is None:
             config = checkpoint['config']
@@ -460,15 +460,15 @@ def create_rvc_model_from_checkpoint(
         state_dict = checkpoint
         config = config or {}
 
-    # 创建模型
+    # CreateModel
     model = SimpleRVCModel(config)
 
-    # 尝试加载权重
+    # Try to load weights
     if state_dict:
         try:
             model.load_state_dict(state_dict, strict=False)
         except Exception:
-            # 部分加载失败，使用默认权重
+            # Partial load failed, use default weights
             pass
 
     return model

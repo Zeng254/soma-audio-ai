@@ -1,12 +1,12 @@
 """
-Audio I/O - 音频读写工具
+Audio I/O - Audio read/write tools
 
-提供统一的音频文件读写接口。
+Provides unified audio file read/write interface.
 
-音频格式约定:
-- 内部存储格式: (channels, samples) - 2D 数组
-- 文件读写格式: (samples, channels) - soundfile 标准格式
-- 库玛索引: (samples,) - 单声道
+Audio format conventions:
+- Internal storage format: (channels, samples) - 2D array
+- File read/write format: (samples, channels) - soundfile Standard format
+- NumPy array: (samples,) - mono
 """
 
 from pathlib import Path
@@ -16,9 +16,9 @@ import numpy as np
 
 class AudioLoader:
     """
-    音频加载器
+    Audio loader
 
-    支持多种音频格式的加载和预处理。
+    Supports multiple audio format loading and preprocessing.
     """
 
     SUPPORTED_FORMATS = {
@@ -26,7 +26,7 @@ class AudioLoader:
         "m4a", "wma", "aiff", "amr", "opus"
     }
 
-    # 常见采样率，用于判断是否为通道数
+    # Common sample rates, used to check if channel count
     COMMON_SAMPLE_RATES = {8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 96000}
 
     def __init__(
@@ -36,15 +36,15 @@ class AudioLoader:
         channel_first: Optional[bool] = None
     ):
         """
-        初始化加载器
+        Initialize loader
 
         Args:
-            target_sr: 目标采样率，None 表示保持原采样率
-            mono: 是否转换为单声道
-            channel_first: 明确指定输入/输出格式
-                          True: 返回 (channels, samples)
-                          False: 返回 (samples, channels)
-                          None: 自动检测（默认）
+            target_sr: Target sample rate, None means keep original
+            mono: Whether to convert to mono
+            channel_first: Explicitly specify input/output format
+                          True: Returns (channels, samples)
+                          False: Returns (samples, channels)
+                          None: Automatic detection (default)
         """
         self.target_sr = target_sr
         self.mono = mono
@@ -56,11 +56,11 @@ class AudioLoader:
         force_channel_first: Optional[bool] = None
     ) -> Tuple[np.ndarray, int]:
         """
-        加载音频文件
+        LoadAudioFile
 
         Args:
-            file_path: 音频文件路径
-            force_channel_first: 强制指定输出格式
+            file_path: AudioFile path
+            force_channel_first: Force specify output format
 
         Returns:
             (audio_data, sample_rate)
@@ -73,42 +73,42 @@ class AudioLoader:
         if suffix not in self.SUPPORTED_FORMATS:
             raise ValueError(f"Unsupported format: {suffix}")
 
-        # 确定输出格式
+        # Determine output format
         output_channel_first = force_channel_first if force_channel_first is not None else self.channel_first
         if output_channel_first is None:
-            output_channel_first = True  # 内部默认使用 channel_first
+            output_channel_first = True  # Internal default uses channel_first
 
         try:
             import soundfile as sf
             audio, sr = sf.read(str(path), dtype='float32')
-            # soundfile 返回 (samples, channels)
+            # soundfile returns (samples, channels)
 
         except ImportError:
-            # 降级到 pydub
+            # Fallback to pydub
             from pydub import AudioSegment
             audio_segment = AudioSegment.from_file(str(path))
             audio = np.array(audio_segment.get_array_of_samples(), dtype=np.float32)
             sr = audio_segment.frame_rate
 
-            # pydub 返回 (samples,)，需要 reshape
+            # pydub returns (samples,), needs reshape
             if audio_segment.channels == 2:
                 audio = audio.reshape((-1, 2))
             else:
                 audio = audio.reshape(-1, 1)
 
-        # 检测并转换通道格式
+        # Detect and convert channel format
         audio = self._ensure_channel_first(audio, sr)
 
-        # 转换单声道
+        # Convert to mono
         if self.mono and audio.shape[0] > 1:
             audio = np.mean(audio, axis=0, keepdims=True)
 
-        # 重采样
+        # Resampling
         if self.target_sr and self.target_sr != sr:
             audio = self._resample(audio, sr, self.target_sr)
             sr = self.target_sr
 
-        # 根据 output_channel_first 决定是否转置
+        # Decide whether to transpose based on output_channel_first
         if not output_channel_first:
             audio = audio.T
 
@@ -116,21 +116,21 @@ class AudioLoader:
 
     def _ensure_channel_first(self, audio: np.ndarray, sample_rate: int) -> np.ndarray:
         """
-        确保音频格式为 (channels, samples)
+        Ensure audio format is (channels, samples)
 
-        通过多种方式检测当前格式：
-        1. 如果有显式的 channel_first 设置，使用该设置
-        2. 如果是 1D 数组，直接添加维度
-        3. 通过维度大小推断格式
+        Detect current format through multiple methods:
+        1. If explicit channel_first setting exists, use it
+        2. If 1D array, directly add dimension
+        3. Infer format by dimension size
 
         Args:
-            audio: 输入音频数据
-            sample_rate: 采样率
+            audio: Input audio data
+            sample_rate: Sample rate
 
         Returns:
-            (channels, samples) 格式的音频
+            (channels, samples) FormatAudio
         """
-        # 如果有显式设置
+        # If explicit setting exists
         if self.channel_first is not None:
             if self.channel_first and audio.ndim == 2 and audio.shape[0] > audio.shape[-1]:
                 return audio.T
@@ -138,37 +138,37 @@ class AudioLoader:
                 return audio.T
             return audio
 
-        # 1D 数组（单声道）
+        # 1D array (mono)
         if audio.ndim == 1:
             return audio[np.newaxis, :]
 
-        # 2D 数组需要推断
+        # 2D array needs inference
         if audio.ndim == 2:
             dim0, dim1 = audio.shape
 
-            # 如果第一维是常见采样率，第二维是合理的通道数
+            # If first dimension is common sample rate, second dimension is reasonable channel count
             if dim0 in self.COMMON_SAMPLE_RATES and dim1 <= 8:
-                # 这种情况很可能是搞反了
+                # This case is likely reversed
                 if dim0 % sample_rate == 0 or dim0 > sample_rate:
                     return audio.T
 
-            # 如果第二维是常见采样率，第一维是合理的通道数
+            # If second dimension is common sample rate, first dimension is reasonable channel count
             if dim1 in self.COMMON_SAMPLE_RATES and dim0 <= 8:
                 return audio
 
-            # 如果第一维远大于第二维，可能已经是 channel_first
+            # If first dimension is much larger than second, likely already channel_first
             if dim0 > dim1 * 2:
                 return audio
 
-            # 如果第二维远大于第一维，可能是 (samples, channels)
+            # If second dimension is much larger than first, likely (samples, channels)
             if dim1 > dim0 * 2:
                 return audio.T
 
-        # 保守策略：默认返回原数组（假设已经是 channel_first）
+        # Conservative strategy: return original array by default (assume already channel_first)
         return audio
 
     def _resample(self, audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
-        """重采样"""
+        """Resampling"""
         try:
             import librosa
             if audio.ndim == 2:
@@ -202,13 +202,13 @@ class AudioLoader:
         force_channel_first: Optional[bool] = None
     ) -> Tuple[np.ndarray, int]:
         """
-        加载音频片段
+        Load audio segment
 
         Args:
-            file_path: 音频文件路径
-            start: 起始时间(秒)
-            end: 结束时间(秒)
-            force_channel_first: 强制指定输出格式
+            file_path: AudioFile path
+            start: Start time (seconds)
+            end: EndTime(seconds)
+            force_channel_first: Force specify output format
 
         Returns:
             (audio_data, sample_rate)
@@ -227,9 +227,9 @@ class AudioLoader:
 
 class AudioSaver:
     """
-    音频保存器
+    Audio saver
 
-    支持多种音频格式的保存。
+    Supports multiple audio format saving.
     """
 
     def __init__(
@@ -238,11 +238,11 @@ class AudioSaver:
         target_db: float = -3.0
     ):
         """
-        初始化保存器
+        Initialize saver
 
         Args:
-            normalize: 是否归一化
-            target_db: 目标分贝值
+            normalize: Whether to normalize
+            target_db: Target decibel value
         """
         self.normalize = normalize
         self.target_db = target_db
@@ -257,36 +257,36 @@ class AudioSaver:
         force_channel_first: Optional[bool] = None
     ) -> bool:
         """
-        保存音频文件
+        SaveAudioFile
 
         Args:
-            audio: 音频数据
-            file_path: 保存路径
-            sample_rate: 采样率
-            format: 音频格式
-            bit_depth: 位深
-            force_channel_first: 指定输入格式
+            audio: Audio data
+            file_path: SavePath
+            sample_rate: Sample rate
+            format: AudioFormat
+            bit_depth: Bit depth
+            force_channel_first: Specify input format
 
         Returns:
-            bool: 是否成功
+            bool: Whether successful
         """
-        # 准备保存路径
+        # Prepare save path
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
         if format is None:
             format = path.suffix[1:].lower()
 
-        # 准备音频数据（转换为 soundfile 需要的 (samples, channels) 格式）
+        # Prepare audio data (convert to soundfile required (samples, channels) format)
         audio = self._prepare_audio(audio, force_channel_first)
 
         try:
             import soundfile as sf
 
-            # 确定 subtype
+            # Determine subtype
             subtype = self._get_subtype(format, bit_depth)
 
-            # 写入文件
+            # WriteFile
             sf.write(
                 str(path),
                 audio,
@@ -298,7 +298,7 @@ class AudioSaver:
             return True
 
         except ImportError:
-            # 降级到 pydub
+            # Fallback to pydub
             return self._save_with_pydub(audio, path, sample_rate, format)
 
     def _prepare_audio(
@@ -307,59 +307,59 @@ class AudioSaver:
         force_channel_first: Optional[bool] = None
     ) -> np.ndarray:
         """
-        准备音频数据，转换为 (samples, channels) 格式
+        Prepare audio data, convert to (samples, channels) format
 
         Args:
-            audio: 输入音频
-            force_channel_first: 指定输入格式
+            audio: Input audio
+            force_channel_first: Specify input format
 
         Returns:
-            (samples, channels) 格式的音频
+            (samples, channels) FormatAudio
         """
-        # 确保是 2D 数组
+        # Ensure it is 2D array
         if audio.ndim == 1:
             audio = audio[np.newaxis, :]
 
-        # 确定是否需要转置
+        # Determine whether transpose is needed
         needs_transpose = False
 
         if force_channel_first is not None:
-            # 显式指定
+            # Explicitly specified
             needs_transpose = force_channel_first
         elif self._looks_like_channel_first(audio):
-            # 检测是否看起来像 channel_first
+            # Detect whether it looks like channel_first
             needs_transpose = True
 
         if needs_transpose and audio.shape[0] < audio.shape[1]:
             audio = audio.T
 
-        # 归一化
+        # Normalization
         if self.normalize:
             audio = self._normalize(audio)
 
-        # 限制范围
+        # Limit range
         audio = np.clip(audio, -1.0, 1.0)
 
         return audio
 
     def _looks_like_channel_first(self, audio: np.ndarray) -> bool:
         """
-        检测音频是否可能是 channel_first 格式
+        Detect whether audio might be channel_first format
 
-        检测方法：
-        1. 如果第一维 <= 8，很可能是通道数
-        2. 如果第二维是采样率的倍数，很可能是样本数
+        Detectionmethod：
+        1. If first dimension <= 8, likely channel count
+        2. If second dimension is sample rate multiple, likely sample count
         """
         if audio.ndim != 2:
             return False
 
         channels, samples = audio.shape
 
-        # 通道数通常 <= 8
+        # Channel count usually <= 8
         if channels > 8:
             return False
 
-        # 如果第一维是常见的采样率，可能是搞反了
+        # If first dimension is common sample rate, dimensions may be swapped
         COMMON_SAMPLE_RATES = {8000, 11025, 16000, 22050, 24000, 32000, 44100, 48000, 96000}
         if channels in COMMON_SAMPLE_RATES and samples <= 8:
             return True
@@ -367,7 +367,7 @@ class AudioSaver:
         return False
 
     def _normalize(self, audio: np.ndarray) -> np.ndarray:
-        """归一化音频"""
+        """NormalizationAudio"""
         max_val = np.max(np.abs(audio))
         if max_val > 0:
             target_linear = 10 ** (self.target_db / 20)
@@ -375,7 +375,7 @@ class AudioSaver:
         return audio
 
     def _get_subtype(self, format: str, bit_depth: int) -> str:
-        """获取音频子类型"""
+        """Get audio subclass type"""
         lossless = {"wav", "flac", "aiff"}
         lossy = {"mp3", "ogg", "aac", "m4a"}
 
@@ -399,19 +399,19 @@ class AudioSaver:
         sample_rate: int,
         format: str
     ) -> bool:
-        """使用 pydub 保存"""
+        """Uses pydub Save"""
         from pydub import AudioSegment
 
-        # 确保是 (samples, channels) 格式
+        # Ensure format is (samples, channels)
         if audio.shape[0] < audio.shape[1]:
             audio = audio.T
 
         channels = audio.shape[1] if audio.ndim > 1 else 1
 
-        # 转换回 int16
+        # Convert back to int16
         audio_int = (audio * 32767).astype(np.int16)
 
-        # 创建 AudioSegment
+        # Create AudioSegment
         segment = AudioSegment(
             audio_int.tobytes(),
             frame_rate=sample_rate,
@@ -430,16 +430,16 @@ class AudioSaver:
         format: str = "wav",
     ) -> dict:
         """
-        保存多个音轨
+        Save multiple audio tracks
 
         Args:
-            tracks: 音轨字典 {name: audio}
-            output_dir: 输出目录
-            sample_rate: 采样率
-            format: 音频格式
+            tracks: track dictionary {name: audio}
+            output_dir: output directory
+            sample_rate: Sample rate
+            format: AudioFormat
 
         Returns:
-            dict: 保存结果 {name: path}
+            dict: save result {name: path}
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)

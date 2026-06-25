@@ -1,6 +1,6 @@
 """
 SOMA Audio Separator Module
-音频分离器模块 - 提供人声/伴奏分离、去混响、降噪等功能
+Audio separator module - Provides vocals/accompaniment separation, dereverberation, denoising and more
 """
 
 from .base import BaseSeparator, SeparationResult

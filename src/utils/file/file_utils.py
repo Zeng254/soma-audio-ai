@@ -12,13 +12,13 @@ from typing import Optional
 
 def get_extension(path: str) -> str:
     """
-    获取文件扩展名（小写，不含点）
+    Get file extension (lowercase, without dot)
     
     Args:
-        path: 文件路径
+        path: File path
         
     Returns:
-        文件扩展名（如 "txt", "pdf"）
+        File extension（e.g. "txt", "pdf"）
     """
     if not path:
         return ""
@@ -30,13 +30,13 @@ def get_extension(path: str) -> str:
 
 def ensure_dir(path: str) -> Path:
     """
-    确保目录存在，如不存在则创建
+    Ensure directory exists, create if not exists
     
     Args:
-        path: 目录路径
+        path: Directory path
         
     Returns:
-        Path 对象
+        Path Object
     """
     dir_path = Path(path)
     dir_path.mkdir(parents=True, exist_ok=True)
@@ -45,49 +45,49 @@ def ensure_dir(path: str) -> Path:
 
 def safe_filename(filename: str, max_length: int = 254) -> str:
     """
-    生成安全的文件名
+    Generate secure filename
     
-    - 移除非法字符（空格替换为下划线）
-    - 处理路径遍历符（.. 替换为下划线）
-    - 限制长度
-    - 保留扩展名
+    - Remove illegal characters (replace spaces with underscores)
+    - Process path iterator characters (replace .. with underscore)
+    - Limit length
+    - Preserve extension
     
     Args:
-        filename: 原始文件名
-        max_length: 最大长度限制（整个文件名含扩展名）
+        filename: Original filename
+        max_length: Maximum length limit (entire filename including extension)
         
     Returns:
-        安全的文件名
+        Secure filename
     """
     if not filename:
         return "unnamed"
     
-    # 空格转下划线
+    # Replace spaces with underscores
     name = filename.replace(' ', '_')
     
-    # 移除非法字符（包括路径分隔符）
+    # Remove illegal characters (including path separators)
     safe_chars = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
     name = safe_chars.sub('_', name)
     
-    # 处理 ".." - 替换为单个下划线
+    # Process ".." - Replace with single underscore
     name = name.replace('..', '_')
     
-    # 分离扩展名（最后一个点）
+    # Separate extension (last dot)
     if '.' in name:
         last_dot = name.rfind('.')
         name_without_ext = name[:last_dot]
-        ext = name[last_dot:]  # 包含点
+        ext = name[last_dot:]  # Contains dot
     else:
         name_without_ext = name
         ext = ""
     
-    # 去掉多余的下划线和点
+    # Remove extra underscores and dots
     name_without_ext = name_without_ext.strip('_.')
     
     if not name_without_ext:
         name_without_ext = "unnamed"
     
-    # 限制长度（整个文件名含扩展名不超过 max_length）
+    # Limit length (entire filename including extension not exceeding max_length)
     max_name_len = max_length - len(ext)
     if len(name_without_ext) > max_name_len:
         name_without_ext = name_without_ext[:max_name_len]
@@ -97,7 +97,7 @@ def safe_filename(filename: str, max_length: int = 254) -> str:
     if not name:
         name = "unnamed"
     
-    # 限制长度（保留扩展名）
+    # Limit length (preserve extension)
     max_name_len = max_length - len(ext)
     if len(name) > max_name_len:
         name = name[:max_name_len]
@@ -107,13 +107,13 @@ def safe_filename(filename: str, max_length: int = 254) -> str:
 
 def ensure_parent_dir(file_path: str) -> Path:
     """
-    确保文件的父目录存在
+    Ensure file parent directory exists
     
     Args:
-        file_path: 文件路径
+        file_path: File path
         
     Returns:
-        Path 对象
+        Path Object
     """
     path_obj = Path(file_path)
     if path_obj.parent:

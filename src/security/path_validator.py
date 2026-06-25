@@ -1,22 +1,22 @@
 """
-SOMA 安全模块 - 路径安全校验
+SOMA Security module - Path security validation
 
-提供路径安全检查，防止路径遍历攻击（Path Traversal）。
+Provides path security checks，Prevents path traversal attacks（Path Traversal）。
 
-攻击示例:
+Attack example:
 - ``../../etc/passwd``
 - ``/home/user/../root/.ssh/id_rsa``
 - ``\\\\UNC\\path\\to\\share``
 
-使用方式:
+Usage:
     from src.security.path_validator import PathValidator, safe_path
 
-    # 验证路径
+    # Validate path
     validator = PathValidator(allowed_dirs=["/home/user/projects"])
     validator.validate("/home/user/projects/audio.wav")  # OK
-    validator.validate("/tmp/evil.wav")  # 抛出 PathTraversalError
+    validator.validate("/tmp/evil.wav")  # Raises PathTraversalError
 
-    # 使用便捷函数
+    # Use convenience function
     safe_path("~/projects/../secrets.txt", base_dir="~/projects")
 """
 
@@ -34,25 +34,25 @@ logger = logging.getLogger(__name__)
 
 class PathValidator:
     """
-    路径安全校验器
+    Path security validator
 
-    功能:
-    - 检测路径遍历攻击 (.. 组件)
-    - 验证路径在允许的目录范围内
-    - 规范化路径（处理符号链接、相对路径）
-    - 检查路径深度
+    Features:
+    - Detect path traversal attacks (.. components)
+    - Validate path is within allowed directory
+    - Normalize path (process symlinks, relative paths)
+    - CheckPathDepth
 
-    使用示例:
+    Usage example:
         validator = PathValidator(
             allowed_dirs=["/data/audio", "~/.soma"],
             allow_symlinks=False,
             max_depth=10
         )
 
-        # 验证单个路径
+        # Validate single path
         validator.validate("/data/audio/sample.wav")
 
-        # 安全解析路径
+        # SecurityParsePath
         safe_path = validator.resolve("~/data/../data/secret.wav")
     """
 
@@ -64,23 +64,23 @@ class PathValidator:
         defaults: Optional[SecurityDefaults] = None
     ):
         """
-        初始化路径验证器
+        Initialize path validator
 
         Args:
-            allowed_dirs: 允许的基础目录列表
-            allow_symlinks: 是否允许符号链接
-            max_depth: 最大路径深度
-            defaults: 安全默认配置
+            allowed_dirs: Allowed base directory list
+            allow_symlinks: Whether to allow symlinks
+            max_depth: MaximumPathDepth
+            defaults: Security default configuration
         """
         self.defaults = defaults or SecurityDefaults()
 
-        # 解析允许的目录
+        # Parse allowed directories
         self.allowed_dirs: List[Path] = []
         dirs = allowed_dirs or self.defaults.allowed_base_dirs
         for d in dirs:
             p = Path(d).expanduser().resolve()
             if not p.exists():
-                logger.warning(f"允许的目录不存在，将被创建: {p}")
+                logger.warning(f"Allowed directory does not exist, will be created: {p}")
                 p.mkdir(parents=True, exist_ok=True)
             self.allowed_dirs.append(p)
 
@@ -89,25 +89,25 @@ class PathValidator:
 
     def validate(self, path: Union[str, Path]) -> Path:
         """
-        验证路径安全性
+        Validate path security
 
         Args:
-            path: 待验证的路径
+            path: Path to validate
 
         Returns:
-            安全解析后的 Path 对象
+            Secure parsed path object
 
         Raises:
-            PathTraversalError: 检测到路径遍历攻击
-            ValueError: 路径无效
+            PathTraversalError: Detected path traversal attack
+            ValueError: Path invalid
         """
-        # 1. 检查空路径
+        # 1. Check empty path
         if not str(path).strip():
-            raise ValueError("路径不能为空")
+            raise ValueError("Path cannot be empty")
 
         path_str = str(path)
 
-        # 2. 检查路径遍历攻击（使用 normpath 规范化后检查 .. 组件）
+        # 2. Check path traversal attack (use normpath to normalize then check .. components)
         normalized = os.path.normpath(path_str)
         if '..' in Path(normalized).parts:
             raise PathTraversalError(
@@ -115,25 +115,25 @@ class PathValidator:
                 allowed_base=None,
             )
 
-        # 3. 检查 UNC 路径（Windows 攻击向量）
+        # 3. Check UNC path (Windows attack vector)
         if normalized.startswith('\\\\') or normalized.startswith('//'):
             raise PathTraversalError(
                 attempted_path=path_str,
                 allowed_base=None,
             )
 
-        # 4. 转换为绝对路径并规范化
+        # 4. Convert to absolute path and normalize
         path_obj = Path(path)
         try:
             if path_obj.exists():
                 resolved = path_obj.expanduser().resolve()
             else:
-                # 路径不存在，只进行基本解析
+                # Path does not exist, only perform basic parse
                 resolved = path_obj.expanduser().resolve()
         except (OSError, RuntimeError) as e:
-            raise ValueError(f"无法解析路径: {path} - {e}")
+            raise ValueError(f"Cannot parse path: {path} - {e}")
 
-        # 5. 再次检查规范化后的路径
+        # 5. Check normalized path again
         normalized_resolved = os.path.normpath(str(resolved))
         if '..' in Path(normalized_resolved).parts:
             raise PathTraversalError(
@@ -141,7 +141,7 @@ class PathValidator:
                 allowed_base=None,
             )
 
-        # 6. 检查符号链接
+        # 6. Check symlinks
         try:
             if not self.allow_symlinks and path_obj.is_symlink():
                 raise PathTraversalError(
@@ -149,40 +149,40 @@ class PathValidator:
                     allowed_base=None,
                 )
         except (OSError, ValueError):
-            pass  # 文件不存在时跳过符号链接检查
+            pass  # Skip symlink check when file does not exist
 
-        # 7. 检查路径深度
+        # 7. CheckPathDepth
         self._check_depth(resolved)
 
-        # 8. 检查是否在允许的目录范围内
+        # 8. Check if within allowed directory range
         if not self._is_in_allowed_dirs(resolved):
             raise PathTraversalError(
                 attempted_path=str(path),
                 allowed_base=str(self.allowed_dirs[0]) if self.allowed_dirs else None,
             )
 
-        logger.debug(f"路径验证通过: {path} -> {resolved}")
+        logger.debug(f"Path validation passed: {path} -> {resolved}")
         return resolved
 
     def resolve(self, path: Union[str, Path]) -> Path:
         """
-        安全解析路径（不检查存在性）
+        Secure parse path (does not check existence)
 
         Args:
-            path: 待解析的路径
+            path: Path to parse
 
         Returns:
-            解析后的 Path 对象
+            Parsed path object
 
         Raises:
-            PathTraversalError: 检测到路径遍历攻击
+            PathTraversalError: Detected path traversal attack
         """
         if not str(path).strip():
-            raise ValueError("路径不能为空")
+            raise ValueError("Path cannot be empty")
 
         path_str = str(path)
 
-        # 检查路径遍历
+        # CheckPathIterate
         normalized = os.path.normpath(path_str)
         if '..' in Path(normalized).parts:
             raise PathTraversalError(
@@ -193,17 +193,17 @@ class PathValidator:
         try:
             resolved = Path(path).expanduser().resolve()
         except (OSError, RuntimeError) as e:
-            raise ValueError(f"无法解析路径: {path} - {e}")
+            raise ValueError(f"Cannot parse path: {path} - {e}")
 
         return resolved
 
     def _is_in_allowed_dirs(self, path: Path) -> bool:
-        """检查路径是否在允许的目录范围内"""
-        # 如果没有配置允许目录，允许绝对路径
+        """Check if path is within allowed directory range"""
+        # If no allowed directories configured, allow absolute paths
         if not self.allowed_dirs:
             return path.is_absolute()
         
-        # 检查是否在允许的目录内
+        # Check if within allowed directory
         for allowed_dir in self.allowed_dirs:
             try:
                 path.relative_to(allowed_dir)
@@ -213,7 +213,7 @@ class PathValidator:
         return False
 
     def _check_depth(self, path: Path) -> None:
-        """检查路径深度"""
+        """CheckPathDepth"""
         depth = len(path.parts)
         if depth > self.max_depth:
             raise PathTraversalError(
@@ -223,13 +223,13 @@ class PathValidator:
 
     def is_safe(self, path: Union[str, Path]) -> bool:
         """
-        检查路径是否安全（不抛出异常）
+        Check if path is secure (does not raise exception)
 
         Args:
-            path: 待检查的路径
+            path: Path to check
 
         Returns:
-            bool: 是否安全
+            bool: Whether secure
         """
         try:
             self.validate(path)
@@ -243,17 +243,17 @@ def safe_path(
     base_dir: Optional[Union[str, Path]] = None,
 ) -> Path:
     """
-    安全获取路径的便捷函数
+    Secure get path convenience function
 
     Args:
-        path: 输入路径
-        base_dir: 允许的基准目录
+        path: Input path
+        base_dir: Allowed base directory
 
     Returns:
-        验证后的路径
+        Validated path
 
     Raises:
-        PathTraversalError: 路径不安全
+        PathTraversalError: Path not secure
     """
     if base_dir:
         validator = PathValidator(allowed_dirs=[base_dir])
@@ -264,16 +264,16 @@ def safe_path(
 
 def safe_join(*parts: str) -> str:
     """
-    安全地拼接路径组件
+    Securely concatenate path components
 
     Args:
-        *parts: 路径组件
+        *parts: Path components
 
     Returns:
-        拼接后的路径
+        Concatenated path
 
     Raises:
-        PathTraversalError: 路径遍历攻击
+        PathTraversalError: Path traversal attack
     """
     path = os.path.join(*parts)
     normalized = os.path.normpath(path)
@@ -287,20 +287,20 @@ def safe_join(*parts: str) -> str:
 
 def ensure_directory(path: Union[str, Path], mode: int = 0o755) -> Path:
     """
-    确保目录存在，如不存在则创建
+    Ensure directory exists, create if not exists
 
     Args:
-        path: 目录路径
-        mode: 目录权限
+        path: Directory path
+        mode: DirectoryPermission
 
     Returns:
-        Path 对象
+        Path Object
 
     Raises:
-        PathTraversalError: 路径不安全
+        PathTraversalError: Path not secure
     """
     p = Path(path).expanduser().resolve()
-    # 验证路径安全性
+    # Validate path security
     normalized = os.path.normpath(str(p))
     if '..' in Path(normalized).parts:
         raise PathTraversalError(
@@ -311,16 +311,16 @@ def ensure_directory(path: Union[str, Path], mode: int = 0o755) -> Path:
     return p
 
 
-# 全局验证器实例
+# Global validator instance
 _default_validator: Optional[PathValidator] = None
 
 
 def get_validator() -> PathValidator:
     """
-    获取全局 PathValidator 实例
+    Get global PathValidator instance
 
     Returns:
-        PathValidator 实例
+        PathValidator Instance
     """
     global _default_validator
     if _default_validator is None:

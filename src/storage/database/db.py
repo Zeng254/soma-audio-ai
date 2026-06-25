@@ -6,7 +6,7 @@ from sqlalchemy.exc import OperationalError
 import logging
 logger = logging.getLogger(__name__)
 
-MAX_RETRY_TIME = 20  # 连接最大重试时间（秒）
+MAX_RETRY_TIME = 20  # Maximum connection retry time（seconds）
 # Load environment variables from .env if present
 try:
     from dotenv import load_dotenv
@@ -55,7 +55,7 @@ def _create_engine_with_retry():
         pool_recycle=recycle,
         pool_timeout=timeout,
     )
-    # 验证连接，带重试
+    # Verify connection，With retry
     start_time = time.time()
     last_error = None
     while time.time() - start_time < MAX_RETRY_TIME:

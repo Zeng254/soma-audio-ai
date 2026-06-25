@@ -1,6 +1,6 @@
 """
-MSST Separator - 基于多尺度频谱Transformer的音频分离器
-支持高保真的人声/伴奏分离
+MSST Separator - Based on multi-scale spectrum transformer audio separator
+Supports high-fidelity vocals/accompaniment separation
 """
 
 from typing import Optional
@@ -12,15 +12,15 @@ from .base import BaseSeparator, SeparationResult
 
 class MSSTSeparator(BaseSeparator):
     """
-    MSST (Multi-Scale Spectral Transformer) 音频分离器
+    MSST (Multi-Scale Spectral Transformer) Audio separator
     
-    基于 Transformer 架构的多尺度频谱分离模型，
-    专注于高质量的人声/伴奏分离。
+    Based on Transformer architecture multi-scale spectrum separation model,
+    Focuses on high-quality vocals/accompaniment separation.
     
-    特点:
-    - 多尺度频谱分析
-    - Transformer self-attention 机制
-    - 高保真分离效果
+    Features:
+    - Multi-scale spectrum analysis
+    - Transformer self-attention mechanism
+    - High-fidelity separation effect
     """
     
     def __init__(
@@ -31,13 +31,13 @@ class MSSTSeparator(BaseSeparator):
         config: Optional[dict] = None,
     ):
         """
-        初始化 MSST 分离器
+        Initialize MSST Separator
         
         Args:
-            model_name: 模型名称
-            sample_rate: 采样率
-            device: 运行设备
-            config: 模型配置
+            model_name: ModelName
+            sample_rate: Sample rate
+            device: Run device
+            config: ModelConfiguration
         """
         super().__init__(sample_rate, device)
         self.model_name = model_name
@@ -45,7 +45,7 @@ class MSSTSeparator(BaseSeparator):
         self._model = None
     
     def _default_config(self) -> dict:
-        """默认配置"""
+        """Default configuration"""
         return {
             "n_fft": 2048,
             "hop_length": 512,
@@ -55,10 +55,10 @@ class MSSTSeparator(BaseSeparator):
         }
     
     def _load_model(self):
-        """延迟加载 MSST 模型"""
+        """DelayLoad MSST Model"""
         if self._model is None:
-            # TODO: 实现 MSST 模型加载逻辑
-            # 预留接口，待集成实际模型
+            # TODO: Implement MSST model loading logic
+            # Reserved interface, to be integrated with actual model
             raise NotImplementedError(
                 "MSST model not yet implemented. "
                 "Use DemucsSeparator for source separation."
@@ -72,14 +72,14 @@ class MSSTSeparator(BaseSeparator):
     
     def separate(self, audio_path: str, **kwargs) -> SeparationResult:
         """
-        从文件路径分离音频
+        FromFile pathSeparationAudio
         
         Args:
-            audio_path: 输入音频文件路径
-            **kwargs: 其他参数
+            audio_path: Input audio file path
+            **kwargs: OtherParameter
             
         Returns:
-            SeparationResult: 分离结果
+            SeparationResult: Separation result
         """
         from src.utils.audio_io import AudioLoader
         
@@ -95,23 +95,23 @@ class MSSTSeparator(BaseSeparator):
         **kwargs
     ) -> SeparationResult:
         """
-        对音频数组进行分离
+        Perform separation on audio array
         
         Args:
-            audio: 音频数据
-            sample_rate: 采样率
-            **kwargs: 其他参数
+            audio: Audio data
+            sample_rate: Sample rate
+            **kwargs: OtherParameter
             
         Returns:
-            SeparationResult: 分离结果
+            SeparationResult: Separation result
         """
         self._load_model()
         
-        # 验证并规范化输入
+        # Validate and normalize input
         audio = self.validate_audio_input(audio)
         
-        # TODO: 实现 MSST 分离逻辑
-        # 预留接口，待集成实际模型
+        # TODO: Implement MSST separation logic
+        # Reserved interface, to be integrated with actual model
         
         return SeparationResult(
             vocals=None,
@@ -121,13 +121,13 @@ class MSSTSeparator(BaseSeparator):
     
     def _compute_spectrogram(self, audio: np.ndarray) -> np.ndarray:
         """
-        计算多尺度频谱图
+        Calculate multi-scale spectrum graph
         
         Args:
-            audio: 输入音频
+            audio: Input audio
             
         Returns:
-            多尺度频谱图
+            Multi-scale spectrum graph
         """
         try:
             import librosa

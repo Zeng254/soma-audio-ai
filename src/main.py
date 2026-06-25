@@ -53,14 +53,14 @@ from coze_coding_utils.log.err_trace import extract_core_stack
 from coze_coding_utils.log.loop_trace import init_run_config, init_agent_config
 
 
-# 超时配置常量
-TIMEOUT_SECONDS = 900  # 15分钟
+# Timeout configuration constants
+TIMEOUT_SECONDS = 900  # 15minutes
 
 class GraphService:
     def __init__(self):
-        # 用于跟踪正在运行的任务（使用asyncio.Task）
+        # Tracks running tasks (using asyncio.Task)
         self.running_tasks: Dict[str, asyncio.Task] = {}
-        # 错误分类器
+        # Error classifier
         self.error_classifier = ErrorClassifier()
         # stream runner
         self._agent_stream_runner = AgentStreamRunner()
@@ -97,14 +97,14 @@ class GraphService:
         else:
             return self._workflow_stream_runner
 
-    # 流式运行（原始迭代器）：本地调用使用
+    # Streaming execution (original iterator): for local calls
     def stream(self, payload: Dict[str, Any], run_config: RunnableConfig, ctx=Context) -> Iterable[Any]:
         graph = self._get_graph(ctx)
         stream_runner = self._get_stream_runner()
         for chunk in stream_runner.stream(payload, graph, run_config, ctx):
             yield chunk
 
-    # 同步运行：本地/HTTP 通用
+    # Sync run: common for local/HTTP
     async def run(self, payload: Dict[str, Any], ctx=None) -> Dict[str, Any]:
         if ctx is None:
             ctx = new_context("run")
@@ -118,29 +118,29 @@ class GraphService:
             run_config = init_run_config(graph, ctx)
             run_config.setdefault("configurable", {})["thread_id"] = ctx.run_id
 
-            # 直接调用，LangGraph会在当前任务上下文中执行
-            # 如果当前任务被取消，LangGraph的执行也会被取消
+            # Direct call, LangGraph will execute in current Task context
+            # If current Task is Cancelled, LangGraph execution will also be Cancelled
             return await graph.ainvoke(payload, config=run_config, context=ctx)
 
         except asyncio.CancelledError:
             logger.info(f"Run {run_id} was cancelled")
             return {"status": "cancelled", "run_id": run_id, "message": "Execution was cancelled"}
         except Exception as e:
-            # 使用错误分类器分类错误
+            # Uses error classifier to classify errors
             err = self.error_classifier.classify(e, {"node_name": "run", "run_id": run_id})
-            # 记录详细的错误信息和堆栈跟踪
+            # Records detailed error info and stack trace
             logger.error(
                 f"Error in GraphService.run: [{err.code}] {err.message}\n"
                 f"Category: {err.category.name}\n"
                 f"Traceback:\n{extract_core_stack()}"
             )
-            # 保留原始异常堆栈，便于上层返回真正的报错位置
+            # Preserves original exception stack for accurate error position reporting
             raise
         finally:
-            # 清理任务记录
+            # Cleanup task record
             self.running_tasks.pop(run_id, None)
 
-    # 流式运行（SSE 格式化）：HTTP 路由使用
+    # Streaming execution (SSE formatted): for HTTP routes
     async def stream_sse(self, payload: Dict[str, Any], ctx=None, run_opt: Optional[RunOpt] = None) -> AsyncGenerator[str, None]:
         if ctx is None:
             ctx = new_context(method="stream_sse")
@@ -165,26 +165,26 @@ class GraphService:
                 else:
                     yield self._sse_event(chunk)
         finally:
-            # 清理任务记录
+            # CleanupTaskRecord
             self.running_tasks.pop(run_id, None)
             cozeloop.flush()
 
-    # 取消执行 - 使用asyncio的标准方式
+    # Cancel execution - uses asyncio standard approach
     def cancel_run(self, run_id: str, ctx: Optional[Context] = None) -> Dict[str, Any]:
         """
-        取消指定run_id的执行
+        Cancel execution for specified run_id
 
-        使用asyncio.Task.cancel()来取消任务,这是标准的Python异步取消机制。
-        LangGraph会在节点之间检查CancelledError,实现优雅的取消。
+        Uses asyncio.Task.cancel() to cancel task, this is standard Python async cancel mechanism.
+        LangGraph checks CancelledError between nodes, implements graceful cancellation.
         """
         logger.info(f"Attempting to cancel run_id: {run_id}")
 
-        # 查找对应的任务
+        # Find corresponding task
         if run_id in self.running_tasks:
             task = self.running_tasks[run_id]
             if not task.done():
-                # 使用asyncio的标准取消机制
-                # 这会在下一个await点抛出CancelledError
+                # Uses asyncio standard cancel mechanism
+                # This will raise CancelledError at next await point
                 task.cancel()
                 logger.info(f"Cancellation requested for run_id: {run_id}")
                 return {
@@ -207,7 +207,7 @@ class GraphService:
                 "message": "No active task found with this run_id. Task may have already completed or run_id is invalid."
             }
 
-    # 运行指定节点：本地/HTTP 通用
+    # Run specified node: common for local/HTTP
     async def run_node(self, node_id: str, payload: Dict[str, Any], ctx=None) -> Any:
         if ctx is None or Context.run_id == "":
             ctx = new_context(method="node_run")
@@ -286,7 +286,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# OpenAI 兼容接口处理器
+# OpenAI compatible interface processor
 openai_handler = OpenAIChatHandler(service)
 
 
@@ -302,15 +302,16 @@ async def http_async_run(request: Request) -> dict:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 一个 ID 走到底：task_id == run_id == thread_id == ctx.run_id == coze_run_id。
-    # 优先用上游 x-run-id；没传就生成 UUID。
+    # Single ID throughout: task_id == run_id == thread_id == ctx.run_id == coze_run_id.
+    # Prefer upstream x-run-id; generate UUID if not provided.
     run_id = request.headers.get(_ASYNC_HEADER_X_RUN_ID) or uuid.uuid4().hex
 
-    # ctx 在 handler scope 构造，与同步 /run 路径一致；后面 new_context 默认会
-    # 给 run_id 一个新 UUID，同步路径也是显式覆盖（main.py /run 处），这里同理。
+    # ctx is constructed in handler scope, consistent with sync /run path;
+    # new_context would assign a new UUID to run_id by default, sync path also
+    # explicitly overrides (at main.py /run), same here.
     ctx = _new_async_ctx(method="async_run", headers=request.headers)
     ctx.run_id = run_id
-    request_context.set(ctx)  # 与其他 HTTP endpoint 一致：让日志组件拿到 run_id 等信息
+    request_context.set(ctx)  # Consistent with other HTTP endpoints: let logging components get run_id etc.
     run_config = init_run_config(async_graph, ctx)
     run_config["recursion_limit"] = async_task_config.RECURSION_LIMIT
     run_config.setdefault("configurable", {})["thread_id"] = run_id
@@ -376,7 +377,7 @@ async def http_run(request: Request) -> Dict[str, Any]:
                             detail=f"Invalid JSON format: {body_text}, traceback: {traceback.format_exc()}, error: {e}")
 
     ctx = new_context(method="run", headers=request.headers)
-    # 优先使用上游指定的 run_id，保证 cancel 能精确匹配
+    # Prefer upstream specified run_id to ensure cancel can match precisely
     upstream_run_id = request.headers.get(HEADER_X_RUN_ID)
     if upstream_run_id:
         ctx.run_id = upstream_run_id
@@ -393,7 +394,7 @@ async def http_run(request: Request) -> Dict[str, Any]:
     try:
         payload = await request.json()
 
-        # 创建任务并记录 - 这是关键，让我们可以通过run_id取消任务
+        # Create task and record - this is key, allows us to cancel task by run_id
         task = asyncio.create_task(service.run(payload, ctx))
         service.running_tasks[run_id] = task
 
@@ -427,7 +428,7 @@ async def http_run(request: Request) -> Dict[str, Any]:
         return result
 
     except Exception as e:
-        # 使用错误分类器获取错误信息
+        # UsesError classifierGetErrorInfo
         error_response = service.error_classifier.get_error_response(e, {"node_name": "http_run", "run_id": run_id})
         logger.error(
             f"Unexpected error in http_run: [{error_response['error_code']}] {error_response['error_message']}, "
@@ -455,7 +456,7 @@ def _register_task(run_id: str, task: asyncio.Task):
 @app.post("/stream_run")
 async def http_stream_run(request: Request):
     ctx = new_context(method="stream_run", headers=request.headers)
-    # 优先使用上游指定的 run_id，保证 cancel 能精确匹配
+    # Prefer upstream specified run_id to ensure cancel can match precisely
     upstream_run_id = request.headers.get(HEADER_X_RUN_ID)
     if upstream_run_id:
         ctx.run_id = upstream_run_id
@@ -512,10 +513,10 @@ async def http_stream_run(request: Request):
 @app.post("/cancel/{run_id}")
 async def http_cancel(run_id: str, request: Request):
     """
-    取消指定run_id的执行
+    Cancel execution for specified run_id
 
-    使用asyncio.Task.cancel()实现取消,这是Python标准的异步任务取消机制。
-    LangGraph会在节点之间的await点检查CancelledError,实现优雅取消。
+    Uses asyncio.Task.cancel() to implement cancellation, this is Python standard async task cancel mechanism.
+    LangGraph checks CancelledError at await points between nodes, implements graceful cancellation.
     """
     ctx = new_context(method="cancel", headers=request.headers)
     request_context.set(ctx)
@@ -551,7 +552,7 @@ async def http_node_run(node_id: str, request: Request):
         raise HTTPException(status_code=404,
                             detail=f"node_id '{node_id}' not found or input miss required fields, traceback: {extract_core_stack()}")
     except Exception as e:
-        # 使用错误分类器获取错误信息
+        # UsesError classifierGetErrorInfo
         error_response = service.error_classifier.get_error_response(e, {"node_name": node_id})
         logger.error(
             f"Unexpected error in http_node_run: [{error_response['error_code']}] {error_response['error_message']}, "
@@ -571,7 +572,7 @@ async def http_node_run(node_id: str, request: Request):
 
 @app.post("/v1/chat/completions")
 async def openai_chat_completions(request: Request):
-    """OpenAI Chat Completions API 兼容接口"""
+    """OpenAI Chat Completions API compatible interface"""
     ctx = new_context(method="openai_chat", headers=request.headers)
     request_context.set(ctx)
 
@@ -590,7 +591,7 @@ async def openai_chat_completions(request: Request):
 @app.get("/health")
 async def health_check():
     try:
-        # 这里可以添加更多的健康检查逻辑
+        # Add more health check logic here
         return {
             "status": "ok",
             "message": "Service is running",
@@ -615,7 +616,7 @@ def parse_args():
 def parse_input(input_str: str) -> Dict[str, Any]:
     """Parse input string, support both JSON string and plain text"""
     if not input_str:
-        return {"text": "你好"}
+        return {"text": "hello"}
 
     # Try to parse as JSON first
     try:
@@ -651,13 +652,13 @@ if __name__ == "__main__":
                 {
                     "type": "query",
                     "session_id": "1",
-                    "message": "你好",
+                    "message": "hello",
                     "content": {
                         "query": {
                             "prompt": [
                                 {
                                     "type": "text",
-                                    "content": {"text": "现在几点了？请调用工具获取当前时间"},
+                                    "content": {"text": "What time is it now? Please call the tool to get the current time"},
                                 }
                             ]
                         }

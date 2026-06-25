@@ -1,6 +1,6 @@
 """
 SOMA Audio Effects Module
-音效处理模块 - 提供均衡器、混响、音调变换等功能
+Audio effects module - Provides equalizer, reverb, pitch shifting and more
 """
 
 from .base import BaseEffect, EffectResult

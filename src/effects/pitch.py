@@ -1,6 +1,6 @@
 """
-Pitch Shifter - 音调变换处理器
-支持半音阶和音分数的音高调整
+Pitch Shifter - Pitch shifting processor
+Supports semitone and cent pitch adjustment
 """
 
 from typing import Optional, Tuple
@@ -11,15 +11,15 @@ from .base import BaseEffect, EffectResult
 
 class PitchShifter(BaseEffect):
     """
-    音调变换处理器
+    Pitch shifting processor
     
-    基于 WSOLA (Waveform Similarity Overlap-Add) 算法实现，
-    支持高质量的实时音高调整。
+    Based on WSOLA (Waveform Similarity Overlap-Add) algorithmImplements，
+    Supports high-quality real-time pitch adjustment.
     
-    功能:
-    - 半音阶音高调整 (semitones)
-    - 音分数调整 (cents)
-    - 速率保持 (preserve_formant)
+    Features:
+    - Semitone pitch adjustment (semitones)
+    - Cent adjustment (cents)
+    - Rate preservation (preserve_formant)
     """
     
     def __init__(
@@ -30,13 +30,13 @@ class PitchShifter(BaseEffect):
         preserve_formant: bool = True,
     ):
         """
-        初始化音调变换器
+        Initialize pitch shifter
         
         Args:
-            sample_rate: 采样率
-            semitones: 半音阶调整 (-12 to +12)
-            cents: 音分数调整 (-100 to +100)
-            preserve_formant: 是否保留共振峰
+            sample_rate: Sample rate
+            semitones: Semitone adjustment (-12 to +12)
+            cents: Cent adjustment (-100 to +100)
+            preserve_formant: Whether to preserve formant
         """
         super().__init__(sample_rate)
         self.semitones = semitones
@@ -45,7 +45,7 @@ class PitchShifter(BaseEffect):
     
     @property
     def pitch_ratio(self) -> float:
-        """计算音高比例因子"""
+        """Calculate pitch ratio factor"""
         total_cents = self.semitones * 100 + self.cents
         return 2 ** (total_cents / 1200)
     
@@ -67,15 +67,15 @@ class PitchShifter(BaseEffect):
         cents: float = 0.0,
     ) -> EffectResult:
         """
-        调整音高
+        Adjust pitch
         
         Args:
-            audio: 输入音频
-            semitones: 半音阶调整
-            cents: 音分数调整
+            audio: Input audio
+            semitones: Semitone adjustment
+            cents: Cent adjustment
             
         Returns:
-            EffectResult: 处理结果
+            EffectResult: Processing result
         """
         self.semitones = semitones
         self.cents = cents
@@ -88,20 +88,20 @@ class PitchShifter(BaseEffect):
         **kwargs
     ) -> EffectResult:
         """
-        应用音调变换
+        Apply pitch shifting
         
         Args:
-            audio: 输入音频
-            sample_rate: 采样率
-            **kwargs: 参数覆盖
+            audio: Input audio
+            sample_rate: Sample rate
+            **kwargs: Parameter override
             
         Returns:
-            EffectResult: 处理结果
+            EffectResult: Processing result
         """
         audio = self.validate_audio(audio)
         self.sample_rate = sample_rate
         
-        # 更新参数
+        # UpdateParameter
         for key in ["semitones", "cents", "preserve_formant"]:
             if key in kwargs:
                 setattr(self, key, kwargs[key])
@@ -109,13 +109,13 @@ class PitchShifter(BaseEffect):
         ratio = self.pitch_ratio
         
         if abs(ratio - 1.0) < 0.001:
-            # 无需处理
+            # No processing needed
             return self._create_result(audio, sample_rate)
         
-        # 重采样实现音高变换
+        # Resampling implements pitch shift
         result = self._time_stretch(audio, 1.0 / ratio)
         
-        # 可选：保留共振峰
+        # Optional: preserve formant
         if self.preserve_formant and abs(ratio - 1.0) > 0.1:
             result = self._formant_preserve(result, ratio)
         
@@ -129,23 +129,23 @@ class PitchShifter(BaseEffect):
         overlap: float = 0.5,
     ) -> np.ndarray:
         """
-        时间拉伸（WSOLA 算法）
+        Time stretch (WSOLA algorithm)
         
         Args:
-            audio: 输入音频
-            stretch_factor: 拉伸因子 (<1 加速, >1 减速)
-            segment_length: 分段长度
-            overlap: 重叠比例
+            audio: Input audio
+            stretch_factor: Stretch factor (<1 speed up, >1 slow down)
+            segment_length: Segment length
+            overlap: Overlap ratio
             
         Returns:
-            拉伸后的音频
+            Stretched audio
         """
         try:
             import librosa
-            # 使用 librosa 实现高质量时间拉伸
+            # Use librosa to implement high quality time stretch
             return self._librosa_time_stretch(audio, stretch_factor)
         except ImportError:
-            # 降级到 scipy 实现
+            # Fallback to scipy implementation
             return self._scipy_time_stretch(audio, stretch_factor)
     
     def _librosa_time_stretch(
@@ -153,10 +153,10 @@ class PitchShifter(BaseEffect):
         audio: np.ndarray,
         stretch_factor: float,
     ) -> np.ndarray:
-        """使用 librosa 实现时间拉伸"""
+        """Use librosa to implement time stretch"""
         import librosa
         
-        # 处理多通道
+        # Process multiple channels
         if audio.shape[0] > 1:
             results = []
             for ch in audio:
@@ -172,21 +172,21 @@ class PitchShifter(BaseEffect):
         audio: np.ndarray,
         stretch_factor: float,
     ) -> np.ndarray:
-        """使用 scipy 信号处理实现时间拉伸"""
+        """Use scipy signal processing to implement time stretch"""
         from scipy import signal
         
-        # 计算新长度
+        # Calculate new length
         new_length = int(len(audio[0]) * stretch_factor)
         
-        # 处理每个通道
+        # Process each channel
         results = []
         for ch in audio:
-            # 重采样实现时间拉伸
+            # Resampling implements time stretch
             indices = np.round(np.arange(0, len(ch), stretch_factor)).astype(int)
             indices = indices[indices < len(ch)]
             stretched = ch[indices]
             
-            # 插值到目标长度
+            # Interpolate to target length
             x_old = np.linspace(0, 1, len(stretched))
             x_new = np.linspace(0, 1, new_length)
             stretched = np.interp(x_new, x_old, stretched)
@@ -201,32 +201,32 @@ class PitchShifter(BaseEffect):
         pitch_ratio: float,
     ) -> np.ndarray:
         """
-        保留共振峰
+        Preserve formant
         
-        通过调整共振峰位置来保持原始音色特征
+        By adjusting formant position to preserve original timbre features
         
         Args:
-            audio: 输入音频
-            pitch_ratio: 音高比例
+            audio: Input audio
+            pitch_ratio: Pitch ratio
             
         Returns:
-            保留共振峰后的音频
+            Audio after formant preservation
         """
-        # 简化的共振峰保留
-        # 实际实现需要 LPC 分析和合成
+        # Simplified formant preservation
+        # Actual implementation requires LPC analysis and synthesis
         try:
             import librosa
             
-            # 估算并移动共振峰
-            # 这里使用简化的预加重/去加重
+            # Estimate and move formant
+            # Here uses simplified pre-emphasis/de-emphasis
             alpha = 0.95 / pitch_ratio
             audio_processed = np.zeros_like(audio)
             
             for ch in range(audio.shape[0]):
                 ch_data = audio[ch]
-                # 预加重
+                # Pre-emphasis
                 pre_emphasized = np.append(ch_data[0], ch_data[1:] - alpha * ch_data[:-1])
-                # 去加重
+                # De-emphasis
                 de_emphasized = np.zeros_like(pre_emphasized)
                 for i in range(1, len(pre_emphasized)):
                     de_emphasized[i] = pre_emphasized[i] + alpha * de_emphasized[i-1]
@@ -242,11 +242,11 @@ class PitchShifter(BaseEffect):
         sample_rate: int = 44100,
     ) -> Tuple[float, float]:
         """
-        检测音频基频
+        Detect audio base frequency
         
         Args:
-            audio: 输入音频
-            sample_rate: 采样率
+            audio: Input audio
+            sample_rate: Sample rate
             
         Returns:
             (frequency_hz, confidence)
@@ -259,7 +259,7 @@ class PitchShifter(BaseEffect):
                 sr=sample_rate,
             )
             
-            # 获取最大幅度的音高
+            # Get maximum amplitude pitch
             max_idx = np.unravel_index(np.argmax(magnitudes), magnitudes.shape)
             pitch_hz = pitches[max_idx]
             confidence = magnitudes[max_idx] / np.max(magnitudes) if np.max(magnitudes) > 0 else 0
@@ -270,17 +270,17 @@ class PitchShifter(BaseEffect):
     
     def match_key(self, audio: np.ndarray, target_key: str = "C") -> float:
         """
-        匹配音乐调性
+        Match musical tonality
         
         Args:
-            audio: 输入音频
-            target_key: 目标调性 (如 "C", "Am")
+            audio: Input audio
+            target_key: Target key (e.g. "C", "Am")
             
         Returns:
-            需要的半音调整数
+            Requires semitone integer
         """
         current_pitch, _ = self.detect_pitch(audio, self.sample_rate)
         
-        # 简单实现：返回需要的调整
-        # 实际需要音阶匹配算法
+        # Simple implementation: returns required adjustment
+        # Actually requires pitch matching algorithm
         return 0.0

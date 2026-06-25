@@ -1,35 +1,35 @@
 """
-SOMA 配置中心
+SOMA Configuration center
 
-提供统一的配置管理系统，支持层级覆盖和类型安全。
+Provides unified configuration management. Supports hierarchical override and type-safe access.
 
-主要组件:
-- Config: 主配置类
-- get_config: 获取全局配置实例
-- init_config: 初始化配置
+Main components:
+- Config: Main configuration class
+- get_config: Get global configuration instance
+- init_config: Initialize configuration
 
-层级覆盖顺序:
-1. 默认值 (defaults.py)
-2. 配置文件 (JSON/YAML)
-3. 用户输入 (运行时覆盖)
+Hierarchical override order:
+1. Default values (defaults.py)
+2. Configuration file (JSON/YAML)
+3. User input (override at runtime)
 
-使用示例:
+Usage example:
     from src.config import get_config, Config
 
-    # 获取全局配置
+    # Get global configuration
     config = get_config()
 
-    # 获取配置值
+    # Get configuration value
     sample_rate = config.get("audio_utils.default_sample_rate")
     device = config.get("separators.device", default="cuda")
 
-    # 设置配置值
+    # Set configuration value
     config.set("separators.device", "cuda")
 
-    # 保存配置
+    # Save configuration
     config.save()
 
-    # 直接导入默认值
+    # Direct import of default values
     from src.config.defaults import SeparatorDefaults, VoiceConverterDefaults
 """
 
@@ -55,16 +55,16 @@ from .config import (
 from src.exceptions import ConfigError, ConfigLoadError, ConfigValidationError, ConfigTypeError
 
 __all__ = [
-    # 配置类
+    # Configuration class
     "Config",
 
-    # 异常
+    # Exceptions
     "ConfigError",
     "ConfigLoadError",
     "ConfigValidationError",
     "ConfigTypeError",
 
-    # 默认配置
+    # Default configuration
     "DEFAULT_CONFIG",
     "SomaDefaults",
     "SeparatorDefaults",
@@ -75,7 +75,7 @@ __all__ = [
     "SecurityDefaults",
     "LoggingDefaults",
 
-    # 工厂函数
+    # Factory functions
     "get_config",
     "get_config_path",
     "init_config",

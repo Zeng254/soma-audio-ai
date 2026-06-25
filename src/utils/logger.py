@@ -1,23 +1,23 @@
 """
-SOMA 日志系统
+SOMA Logging system
 
-提供统一的日志管理，支持：
-- 控制台和文件双输出
-- 按天滚动的日志文件
-- 模块级别的日志控制
-- 灵活的日志格式配置
+Provides unified logging management, supports:
+- Console and file dual output
+- Daily rotating log files
+- Module-level logging control
+- Flexible logging format configuration
 
-使用方式:
+Usage:
     from src.utils.logger import get_logger, setup_logging
 
-    # 设置日志系统（应用启动时调用一次）
+    # Set logging system (called once at application start)
     setup_logging(level="DEBUG")
 
-    # 获取模块 logger
+    # GetModule logger
     logger = get_logger(__name__)
     logger.info("This is an info message")
 
-    # 在模块中直接使用
+    # Use directly in module
     from src.utils.logger import logger
     logger.info("Module-level logging")
 """
@@ -33,7 +33,7 @@ from datetime import datetime
 from src.config import LoggingDefaults, get_config
 
 
-# 日志级别映射
+# Logging level mapping
 LOG_LEVELS = {
     'DEBUG': logging.DEBUG,
     'INFO': logging.INFO,
@@ -42,25 +42,25 @@ LOG_LEVELS = {
     'CRITICAL': logging.CRITICAL,
 }
 
-# 全局 logger 实例
+# Global logger instance
 _logger: Optional[logging.Logger] = None
 _module_loggers: Dict[str, logging.Logger] = {}
 
 
 def get_log_level(level_str: str) -> int:
-    """将字符串日志级别转换为 int"""
+    """Convert string logging level to int"""
     return LOG_LEVELS.get(level_str.upper(), logging.INFO)
 
 
 class ColoredFormatter(logging.Formatter):
-    """带颜色的日志格式化器"""
+    """Colored logging formatter"""
 
     COLORS = {
-        'DEBUG': '\033[36m',      # 青色
-        'INFO': '\033[32m',       # 绿色
-        'WARNING': '\033[33m',    # 黄色
-        'ERROR': '\033[31m',      # 红色
-        'CRITICAL': '\033[35m',   # 紫色
+        'DEBUG': '\033[36m',      # Cyan
+        'INFO': '\033[32m',       # Green
+        'WARNING': '\033[33m',    # Yellow
+        'ERROR': '\033[31m',      # Red
+        'CRITICAL': '\033[35m',   # Purple
         'RESET': '\033[0m',
     }
 
@@ -68,7 +68,7 @@ class ColoredFormatter(logging.Formatter):
         super().__init__(fmt, datefmt)
 
     def format(self, record: logging.LogRecord) -> str:
-        # 添加颜色
+        # Add color
         levelname = record.levelname
         if levelname in self.COLORS:
             record.levelname = (
@@ -90,23 +90,23 @@ def setup_logging(
     config: Optional[object] = None
 ) -> None:
     """
-    设置全局日志系统
+    Set global logging system
 
     Args:
-        level: 日志级别 (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_dir: 日志目录，默认 ~/.soma/logs
-        log_file: 日志文件名
-        console_output: 是否输出到控制台
-        file_output: 是否输出到文件
-        format_string: 日志格式字符串
-        date_format: 日期格式字符串
-        backup_count: 保留的日志文件数量
-        max_bytes: 单个日志文件最大大小
-        config: 配置对象（优先使用）
+        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_dir: Logging directory, default ~/.soma/logs
+        log_file: Log file name
+        console_output: Whether to output to console
+        file_output: Whether to output to file
+        format_string: Logging formatString
+        date_format: DateFormatString
+        backup_count: Keep log file count
+        max_bytes: Single log file maximum size
+        config: Configuration object (preferred)
     """
     global _logger
 
-    # 优先使用配置对象
+    # Prefer configuration object
     if config is None:
         try:
             config = get_config()
@@ -124,16 +124,16 @@ def setup_logging(
             date_format = date_format or log_config.date_format
             backup_count = backup_count if backup_count != 7 else log_config.backup_count
 
-    # 创建根 logger
+    # Create root logger
     logger = logging.getLogger("soma")
     logger.setLevel(get_log_level(level))
     logger.handlers.clear()
 
-    # 日志格式
+    # Logging format
     fmt = format_string or "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
     datefmt = date_format or "%Y-%m-%d %H:%M:%S"
 
-    # 控制台处理器
+    # Console handler
     if console_output:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(get_log_level(level))
@@ -141,72 +141,72 @@ def setup_logging(
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
 
-    # 文件处理器
+    # File handler
     if file_output:
         log_path = Path(log_dir or "~/.soma/logs").expanduser()
         log_path.mkdir(parents=True, exist_ok=True)
 
         file_path = log_path / log_file
 
-        # 使用 TimedRotatingFileHandler 按天滚动
+        # Use TimedRotatingFileHandler for daily rotation
         file_handler = TimedRotatingFileHandler(
             filename=str(file_path),
-            when='midnight',          # 每天午夜滚动
-            interval=1,               # 间隔 1 天
-            backupCount=backup_count,  # 保留 7 天
+            when='midnight',          # Rotate at midnight every day
+            interval=1,               # Interval 1 day
+            backupCount=backup_count,  # Keep 7 days
             encoding='utf-8',
             delay=False
         )
         file_handler.setLevel(get_log_level(level))
 
-        # 普通格式化器（文件不需要颜色）
+        # Normal formatter (file does not need color)
         file_formatter = logging.Formatter(fmt, datefmt)
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
 
-    # 保存全局 logger 引用
+    # Save global logger reference
     _logger = logger
 
     logger.info("=" * 60)
-    logger.info("SOMA 日志系统已初始化")
-    logger.info(f"日志级别: {level}")
-    logger.info(f"日志目录: {log_path if file_output else 'N/A'}")
+    logger.info("SOMA logging system initialized")
+    logger.info(f"Logging level: {level}")
+    logger.info(f"loggingDirectory: {log_path if file_output else 'N/A'}")
     logger.info("=" * 60)
 
 
 def get_logger(name: str) -> logging.Logger:
     """
-    获取模块 logger
+    GetModule logger
 
     Args:
-        name: 模块名称，通常使用 __name__
+        name: Module name, usually uses __name__
 
     Returns:
-        Logger 实例
+        Logger Instance
 
-    示例:
+    Example:
         logger = get_logger(__name__)
         logger.info("Info message")
         logger.debug("Debug message")
     """
     global _module_loggers
 
-    # 如果模块 logger 已存在，直接返回
+    # If module logger already exists, return directly
     if name in _module_loggers:
         return _module_loggers[name]
 
-    # 确保全局 logger 已初始化
+    # Ensure global logger is initialized
     if _logger is None:
         setup_logging()
 
-    # 创建模块 logger
+    # CreateModule logger
     logger = logging.getLogger(name)
 
-    # 如果模块没有处理器，使用根 logger 的处理器
+    # If module has no handler, use root logger handler
     if not logger.handlers and not logger.parent:
         logger = _logger
 
-    # 缓存
+    # Cache
     _module_loggers[name] = logger
 
     return logger
@@ -214,13 +214,13 @@ def get_logger(name: str) -> logging.Logger:
 
 def set_module_level(module: str, level: str) -> None:
     """
-    设置模块日志级别
+    SetModuleLogging level
 
     Args:
-        module: 模块名，如 "soma.separators"
-        level: 日志级别
+        module: Module name, e.g. "soma.separators"
+        level: Logging level
 
-    示例:
+    Example:
         set_module_level("soma.separators", "DEBUG")
     """
     logger = logging.getLogger(module)
@@ -228,7 +228,7 @@ def set_module_level(module: str, level: str) -> None:
 
 
 def get_log_file_path() -> Optional[Path]:
-    """获取当前日志文件路径"""
+    """Get current logging file path"""
     if _logger is None:
         return None
 
@@ -239,36 +239,36 @@ def get_log_file_path() -> Optional[Path]:
     return None
 
 
-# 便捷函数
+# Convenience function
 def debug(message: str, *args, **kwargs) -> None:
-    """记录 DEBUG 级别日志"""
+    """Record DEBUG level logging"""
     if _logger:
         _logger.debug(message, *args, **kwargs)
 
 
 def info(message: str, *args, **kwargs) -> None:
-    """记录 INFO 级别日志"""
+    """Record INFO level logging"""
     if _logger:
         _logger.info(message, *args, **kwargs)
 
 
 def warning(message: str, *args, **kwargs) -> None:
-    """记录 WARNING 级别日志"""
+    """Record WARNING level logging"""
     if _logger:
         _logger.warning(message, *args, **kwargs)
 
 
 def error(message: str, *args, **kwargs) -> None:
-    """记录 ERROR 级别日志"""
+    """Record ERROR level logging"""
     if _logger:
         _logger.error(message, *args, **kwargs)
 
 
 def critical(message: str, *args, **kwargs) -> None:
-    """记录 CRITICAL 级别日志"""
+    """Record CRITICAL level logging"""
     if _logger:
         _logger.critical(message, *args, **kwargs)
 
 
-# 默认 logger（供其他模块导入使用）
+# Default logger (for other module import use)
 logger = logging.getLogger("soma")

@@ -1,8 +1,8 @@
 """
-Voice Converter Factory - 声音转换引擎工厂
+Voice Converter Factory - Voice conversion engine factory
 
-提供统一的引擎创建和管理接口。
-支持自动识别模型类型。
+Provides unified engine creation and management interface.
+Supports automatic model type detection.
 """
 
 from typing import Optional, Dict, List, Type, Any, Union
@@ -20,25 +20,25 @@ from .base import (
 
 class ConverterFactory:
     """
-    声音转换器工厂
+    Voice converter factory
     
-    负责:
-    - 自动识别模型类型
-    - 创建合适的转换器实例
-    - 管理转换器生命周期
-    - 缓存已创建的转换器
+    Responsible for:
+    - Automatic model type detection
+    - Create appropriate converter instance
+    - Manage converter lifecycle
+    - Cache created converters
     """
     
-    # 引擎注册表
+    # Engine registry
     _engines: Dict[ConverterType, Type[BaseVoiceConverter]] = {}
     
-    # 模型类型标识
+    # Model type identifier
     MODEL_TYPE_INDICATORS = {
-        # RVC 标识
+        # RVC identifier
         ".pth": "rvc",
         "rvc": ["model", "emb", "f0"],
         
-        # SoVITS 标识
+        # SoVITS identifier
         "G_*.pth": "sovits",
         "sovits": ["config", "mel", "spk"],
     }
@@ -50,11 +50,11 @@ class ConverterFactory:
         engine_class: Type[BaseVoiceConverter]
     ):
         """
-        注册声音转换引擎
+        Register voice conversion engine
         
         Args:
-            converter_type: 引擎类型
-            engine_class: 引擎类
+            converter_type: Engine class type
+            engine_class: Engine class
         """
         cls._engines[converter_type] = engine_class
     
@@ -69,35 +69,35 @@ class ConverterFactory:
         **kwargs
     ) -> BaseVoiceConverter:
         """
-        创建声音转换器
+        CreateVoice converter
         
-        自动识别模型类型并创建对应的转换器。
+        Automatically detect model type and create corresponding converter.
         
         Args:
-            model_path: 模型文件路径
-            config_path: 配置文件路径
-            index_path: 索引文件路径
-            engine: 强制指定引擎 ('rvc', 'sovits')
-            device: 运行设备
-            **kwargs: 其他参数
+            model_path: ModelFile path
+            config_path: Configuration filePath
+            index_path: IndexFile path
+            engine: Force specify engine ('rvc', 'sovits')
+            device: Run device
+            **kwargs: OtherParameter
             
         Returns:
-            BaseVoiceConverter: 转换器实例
+            BaseVoiceConverter: Converter instance
             
         Raises:
-            FileNotFoundError: 模型文件不存在
-            ValueError: 无法识别模型类型
+            FileNotFoundError: Model file does not exist
+            ValueError: Cannot detect model class type
         """
         model_file = Path(model_path)
         
         if not model_file.exists():
             raise FileNotFoundError(f"Model file not found: {model_path}")
         
-        # 如果没有提供 config_path，尝试查找
+        # If config_path not provided, try to find
         if config_path is None:
             config_path = cls._find_config(model_file)
         
-        # 识别模型类型
+        # Detect model class type
         if engine is None:
             engine = cls.identify_model_type(
                 model_path,
@@ -105,7 +105,7 @@ class ConverterFactory:
                 index_path
             )
         
-        # 获取引擎类型
+        # Get engine class type
         try:
             converter_type = ConverterType(engine.lower())
         except ValueError:
@@ -114,14 +114,14 @@ class ConverterFactory:
                 f"Supported: {', '.join([e.value for e in ConverterType])}"
             )
         
-        # 创建转换器
+        # Create converter
         converter = cls._create_converter_instance(
             converter_type,
             device,
             **kwargs
         )
         
-        # 加载模型
+        # LoadModel
         converter.load_model(
             model_path,
             config_path=config_path,
@@ -139,21 +139,21 @@ class ConverterFactory:
         **kwargs
     ) -> BaseVoiceConverter:
         """
-        创建转换器实例
+        Create converter instance
         
         Args:
-            converter_type: 转换器类型
-            device: 设备
-            **kwargs: 其他参数
+            converter_type: Converter class type
+            device: Device
+            **kwargs: OtherParameter
             
         Returns:
-            BaseVoiceConverter: 转换器实例
+            BaseVoiceConverter: Converter instance
         """
-        # 检查是否已注册
+        # Check if already registered
         if converter_type in cls._engines:
             engine_class = cls._engines[converter_type]
         else:
-            # 动态导入
+            # Dynamic import
             if converter_type == ConverterType.RVC:
                 from .rvc_converter import RVCConverter
                 engine_class = RVCConverter
@@ -163,7 +163,7 @@ class ConverterFactory:
             else:
                 raise ValueError(f"Unsupported converter type: {converter_type}")
         
-        # 创建实例
+        # CreateInstance
         return engine_class(device=device, **kwargs)
     
     @classmethod
@@ -174,50 +174,50 @@ class ConverterFactory:
         index_path: Optional[str] = None,
     ) -> str:
         """
-        识别模型类型
+        Detect model class type
         
         Args:
-            model_path: 模型路径
-            config_path: 配置文件路径
-            index_path: 索引文件路径
+            model_path: ModelPath
+            config_path: Configuration filePath
+            index_path: IndexFile path
             
         Returns:
-            str: 模型类型 ('rvc' 或 'sovits')
+            str: Model class type ('rvc' or 'sovits')
         """
         model_file = Path(model_path)
         
-        # 1. 从文件名判断
+        # 1. Check from filename
         model_name = model_file.name.lower()
         
         if model_name.startswith("G_") or model_name.startswith("D_"):
-            # SoVITS 命名规范
+            # SoVITS naming convention
             return "sovits"
         
-        # 2. 从配置判断
+        # 2. FromConfigurationCheck
         if config_path and Path(config_path).exists():
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                 
-                # SoVITS 配置特征
+                # SoVITS ConfigurationFeature
                 if "train" in config or "model" in config:
                     if "spk" in config or "n_speakers" in config:
                         return "sovits"
                 
-                # RVC 配置特征
+                # RVC ConfigurationFeature
                 if "emb" in config or "f0" in config:
                     return "rvc"
                     
             except Exception:
                 pass
         
-        # 3. 从索引文件判断
+        # 3. FromIndexFileCheck
         if index_path and Path(index_path).exists():
             index_file = Path(index_path)
             if index_file.suffix == ".index":
                 return "rvc"
         
-        # 4. 检查同目录下的配置
+        # 4. Check configuration in same directory
         possible_configs = [
             model_file.parent / "config.json",
             model_file.parent / "configs" / "config.json",
@@ -237,13 +237,13 @@ class ConverterFactory:
                 except Exception:
                     continue
         
-        # 5. 默认值 (优先 RVC)
+        # 5. Default values (prefer RVC)
         return "rvc"
     
     @classmethod
     def _find_config(cls, model_file: Path) -> Optional[str]:
-        """查找配置文件"""
-        # SoVITS 配置查找路径
+        """FindConfiguration file"""
+        # SoVITS ConfigurationFindPath
         sovits_paths = [
             model_file.parent / "config.json",
             model_file.parent / "configs" / "config.json",
@@ -255,20 +255,20 @@ class ConverterFactory:
             if path.exists():
                 return str(path)
         
-        # RVC 不需要配置文件 (可选)
+        # RVC does not need configuration file (optional)
         return None
     
     @classmethod
     def get_available_engines(cls) -> List[Dict[str, Any]]:
         """
-        获取可用的引擎列表
+        Get available engine list
         
         Returns:
-            List[Dict]: 引擎信息列表
+            List[Dict]: Engine info list
         """
         engines = []
         
-        # 检查 RVC
+        # Check RVC
         try:
             from .rvc_converter import RVCConverter
             if RVCConverter.is_available():
@@ -286,7 +286,7 @@ class ConverterFactory:
                 "error": "torch not installed",
             })
         
-        # 检查 SoVITS
+        # Check SoVITS
         try:
             from .sovits_converter import SoVITSConverter
             if SoVITSConverter.is_available():
@@ -309,13 +309,13 @@ class ConverterFactory:
     @classmethod
     def get_recommended_params(cls, engine: str) -> ConversionParams:
         """
-        获取引擎推荐参数
+        Get engine recommended parameters
         
         Args:
-            engine: 引擎类型
+            engine: Engine class type
             
         Returns:
-            ConversionParams: 推荐参数
+            ConversionParams: Recommended parameters
         """
         if engine == "rvc":
             return ConversionParams(
@@ -339,13 +339,13 @@ class ConverterFactory:
 
 class VoiceConverterManager:
     """
-    声音转换器管理器
+    Voice converter manager
     
-    生命周期管理和资源共享
+    Lifecycle management and resource sharing
     """
     
     def __init__(self):
-        """初始化管理器"""
+        """Initialize manager"""
         self._converters: Dict[str, BaseVoiceConverter] = {}
         self._current: Optional[str] = None
     
@@ -356,21 +356,21 @@ class VoiceConverterManager:
         **kwargs
     ) -> BaseVoiceConverter:
         """
-        加载转换器
+        Load converter
         
         Args:
-            name: 转换器名称
-            model_path: 模型路径
-            **kwargs: 其他参数
+            name: Converter name
+            model_path: ModelPath
+            **kwargs: OtherParameter
             
         Returns:
-            BaseVoiceConverter: 转换器实例
+            BaseVoiceConverter: Converter instance
         """
-        # 如果已存在，先卸载
+        # If already exists, uninstall first
         if name in self._converters:
             self.unload(name)
         
-        # 创建新的转换器
+        # Create new converter
         converter = ConverterFactory.create_converter(
             model_path,
             **kwargs
@@ -383,13 +383,13 @@ class VoiceConverterManager:
     
     def get(self, name: Optional[str] = None) -> Optional[BaseVoiceConverter]:
         """
-        获取转换器
+        Get converter
         
         Args:
-            name: 转换器名称，None 则返回当前
+            name: Converter name, None returns current
             
         Returns:
-            BaseVoiceConverter 或 None
+            BaseVoiceConverter or None
         """
         if name is None:
             name = self._current
@@ -398,10 +398,10 @@ class VoiceConverterManager:
     
     def unload(self, name: str):
         """
-        卸载转换器
+        Unload converter
         
         Args:
-            name: 转换器名称
+            name: Converter name
         """
         if name in self._converters:
             converter = self._converters[name]
@@ -409,36 +409,36 @@ class VoiceConverterManager:
             del self._converters[name]
             
             if self._current == name:
-                # 选择另一个作为当前
+                # Select another as current
                 self._current = next(iter(self._converters.keys()), None)
     
     def unload_all(self):
-        """卸载所有转换器"""
+        """Unload all converters"""
         for converter in self._converters.values():
             converter.unload()
         self._converters.clear()
         self._current = None
     
     def list_converters(self) -> List[str]:
-        """列出已加载的转换器"""
+        """List loaded converters"""
         return list(self._converters.keys())
     
     @property
     def current(self) -> Optional[BaseVoiceConverter]:
-        """获取当前转换器"""
+        """Get current converter"""
         return self.get()
     
     def __enter__(self) -> "VoiceConverterManager":
-        """上下文管理器入口"""
+        """Context manager entry"""
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """上下文管理器出口"""
+        """Context manager exit"""
         self.unload_all()
         return False
 
 
-# 注册默认引擎（惰性导入，失败时记录日志但不崩溃）
+# Register default engines (lazy import, log on failure but do not crash)
 import logging
 
 logger = logging.getLogger(__name__)

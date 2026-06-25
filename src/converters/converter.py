@@ -1,6 +1,6 @@
 """
-Audio Converter - 音频格式转换器
-支持多种音频格式之间的转换
+Audio Converter - AudioFormat converter
+Supports conversion between multiple audio formats
 """
 
 from dataclasses import dataclass
@@ -13,7 +13,7 @@ import ffmpeg
 
 
 class ConversionFormat(Enum):
-    """支持的音频格式"""
+    """Supported audio formats"""
     WAV = "wav"
     MP3 = "mp3"
     FLAC = "flac"
@@ -24,16 +24,16 @@ class ConversionFormat(Enum):
     AIFF = "aiff"
     AMR = "amr"
     
-    # 无损格式
+    # Lossless formats
     LOSSLESS_FORMATS = {WAV, FLAC, AIFF}
     
-    # 有损格式
+    # Lossy formats
     LOSSY_FORMATS = {MP3, AAC, OGG, M4A, WMA, AMR}
 
 
 @dataclass
 class AudioMetadata:
-    """音频元数据"""
+    """Audio metadata"""
     format: str
     sample_rate: int
     channels: int
@@ -48,19 +48,19 @@ class AudioMetadata:
 
 class AudioConverter:
     """
-    音频格式转换器
+    Audio format converter
     
-    基于 FFmpeg 实现高质量音频格式转换。
+    Implements high-quality audio format conversion based on FFmpeg.
     
-    支持的转换:
-    - 格式转换 (MP3 -> WAV, FLAC -> MP3, etc.)
-    - 采样率转换 (44100 -> 48000)
-    - 声道转换 (Stereo -> Mono)
-    - 比特率调整
-    - 质量预设
+    Supports conversion:
+    - Format conversion (MP3 -> WAV, FLAC -> MP3, etc.)
+    - Sample rate conversion (44100 -> 48000)
+    - Channel conversion (Stereo -> Mono)
+    - Bitrate adjustment
+    - Quality presets
     """
     
-    # 质量预设
+    # Quality presets
     QUALITY_PRESETS = {
         "ultra": {"codec": "libFLAC", "compression": 0},
         "high": {"codec": "libFLAC", "compression": 3},
@@ -70,10 +70,10 @@ class AudioConverter:
     
     def __init__(self, ffmpeg_path: Optional[str] = None):
         """
-        初始化转换器
+        Initialize converter
         
         Args:
-            ffmpeg_path: FFmpeg 可执行文件路径
+            ffmpeg_path: FFmpeg executable file path
         """
         self.ffmpeg_path = ffmpeg_path
     
@@ -89,30 +89,30 @@ class AudioConverter:
         **kwargs
     ) -> bool:
         """
-        转换音频文件
+        Convert audio file
         
         Args:
-            input_path: 输入文件路径
-            output_path: 输出文件路径
-            output_format: 输出格式 (wav, mp3, flac, etc.)
-            sample_rate: 目标采样率
-            channels: 目标声道数
-            bit_rate: 目标比特率
-            quality: 质量预设
-            **kwargs: FFmpeg 其他参数
+            input_path: Input file path
+            output_path: Output file path
+            output_format: Output format (wav, mp3, flac, etc.)
+            sample_rate: Target sample rate
+            channels: Target channel count
+            bit_rate: Target bit rate
+            quality: Quality preset
+            **kwargs: Other FFmpeg parameters
             
         Returns:
-            bool: 转换是否成功
+            bool: Whether conversion succeeded
         """
-        # 确定输出格式
+        # Determine output format
         if output_format is None:
             output_format = Path(output_path).suffix[1:].lower()
         
         try:
-            # 构建 FFmpeg 命令
+            # Build FFmpeg command
             stream = ffmpeg.input(input_path)
             
-            # 音频过滤器
+            # Audio filters
             filters = []
             if sample_rate:
                 filters.append(f"aformat=sample_fmts=fltp:sample_rates={sample_rate}")
@@ -125,10 +125,10 @@ class AudioConverter:
             if filters:
                 stream = ffmpeg.filter(stream, 'afilter', ','.join(filters))
             
-            # 获取编码器设置
+            # Get encoder settings
             codec_settings = self.QUALITY_PRESETS.get(quality, self.QUALITY_PRESETS["high"])
             
-            # 构建输出参数
+            # Build output parameters
             output_kwargs = {}
             if "codec" in codec_settings:
                 output_kwargs["acodec"] = codec_settings["codec"]
@@ -137,10 +137,10 @@ class AudioConverter:
             if bit_rate:
                 output_kwargs["audio_bitrate"] = bit_rate
             
-            # 添加额外参数
+            # Add extra parameters
             output_kwargs.update(kwargs)
             
-            # 执行转换
+            # Execute conversion
             ffmpeg.output(stream, output_path, **output_kwargs).run(
                 cmd=self.ffmpeg_path,
                 overwrite_output=True,
@@ -162,28 +162,28 @@ class AudioConverter:
         **kwargs
     ) -> bool:
         """
-        将音频数组转换为文件
+        Convert audio array to file
         
         Args:
-            audio: 音频数据
-            sample_rate: 采样率
-            output_path: 输出文件路径
-            output_format: 输出格式
-            **kwargs: 其他参数
+            audio: Audio data
+            sample_rate: Sample rate
+            output_path: Output file path
+            output_format: Output format
+            **kwargs: Other parameters
             
         Returns:
-            bool: 转换是否成功
+            bool: Whether conversion succeeded
         """
         try:
             import soundfile as sf
             
-            # 确保音频格式正确
+            # Ensure audio format is correct
             if audio.ndim == 1:
                 audio = audio[np.newaxis, :]
             elif audio.shape[0] > audio.shape[1]:
                 audio = audio.T
             
-            # 写入文件
+            # WriteFile
             sf.write(output_path, audio.T, sample_rate, format=output_format.upper())
             return True
             
@@ -196,13 +196,13 @@ class AudioConverter:
     
     def get_metadata(self, file_path: str) -> Optional[AudioMetadata]:
         """
-        获取音频元数据
+        Get audio metadata
         
         Args:
-            file_path: 音频文件路径
+            file_path: Audio file path
             
         Returns:
-            AudioMetadata: 元数据对象
+            AudioMetadata: Metadata object
         """
         try:
             probe = ffmpeg.probe(file_path, cmd=self.ffmpeg_path)
@@ -216,7 +216,7 @@ class AudioConverter:
             
             format_info = probe["format"]
             
-            # 解析标签
+            # Parse tags
             tags = audio_stream.get("tags", {})
             
             return AudioMetadata(
@@ -243,16 +243,16 @@ class AudioConverter:
         **kwargs
     ) -> dict:
         """
-        批量转换
+        Batch convert
         
         Args:
-            input_files: 输入文件列表
-            output_dir: 输出目录
-            output_format: 输出格式
-            **kwargs: 转换参数
+            input_files: Input file list
+            output_dir: Output directory
+            output_format: Output format
+            **kwargs: Conversion parameters
             
         Returns:
-            dict: 转换结果 {file: success}
+            dict: Conversion results {file: success}
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -272,20 +272,20 @@ class AudioConverter:
         target_db: float = -20.0,
     ) -> bool:
         """
-        归一化音频电平
+        Normalize audio level
         
         Args:
-            input_path: 输入文件
-            output_path: 输出文件
-            target_db: 目标分贝值
+            input_path: Input file
+            output_path: Output file
+            target_db: Target decibel value
             
         Returns:
-            bool: 是否成功
+            bool: Whether succeeded
         """
         try:
             stream = ffmpeg.input(input_path)
             
-            # loudnorm 滤波器
+            # loudnorm Filter
             filtered = ffmpeg.filter(
                 stream,
                 "loudnorm",
@@ -311,16 +311,16 @@ class AudioConverter:
         end_time: Optional[float] = None,
     ) -> bool:
         """
-        裁剪音频
+        Trim audio
         
         Args:
-            input_path: 输入文件
-            output_path: 输出文件
-            start_time: 起始时间(秒)
-            end_time: 结束时间(秒)
+            input_path: Input file
+            output_path: Output file
+            start_time: Start time (seconds)
+            end_time: End time (seconds)
             
         Returns:
-            bool: 是否成功
+            bool: Whether succeeded
         """
         try:
             if end_time:
@@ -344,31 +344,31 @@ class AudioConverter:
         crossfade: float = 0.0,
     ) -> bool:
         """
-        合并多个音频文件
+        Merge multiple audio files
         
         Args:
-            input_files: 输入文件列表
-            output_path: 输出文件
-            crossfade: 交叉淡入淡出时长
+            input_files: Input file list
+            output_path: Output file
+            crossfade: Crossfade duration
             
         Returns:
-            bool: 是否成功
+            bool: Whether succeeded
         """
         if not input_files:
             return False
         
         try:
             if len(input_files) == 1:
-                # 单个文件，直接复制
+                # Single file, just copy
                 import shutil
                 shutil.copy(input_files[0], output_path)
                 return True
             
-            # 复杂合并使用 filter_complex
+            # Complex merge uses filter_complex
             inputs = [ffmpeg.input(f) for f in input_files]
             
             if crossfade > 0:
-                # 带交叉淡入淡出的合并
+                # Merge with crossfade
                 merged = inputs[0]
                 for inp in inputs[1:]:
                     merged = ffmpeg.filter(
@@ -377,7 +377,7 @@ class AudioConverter:
                         d=crossfade,
                     )
             else:
-                # 直接拼接
+                # Direct concatenation
                 merged = ffmpeg.concat(*inputs, a=1)
             
             ffmpeg.output(merged, output_path, overwrite_output=True).run(

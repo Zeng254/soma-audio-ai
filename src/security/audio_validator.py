@@ -1,24 +1,24 @@
 """
-SOMA 安全模块 - 音频文件验证
+SOMA Security module - AudioFile validation
 
-提供音频文件安全检查，包括：
-- 文件格式验证
-- 采样率范围检查
-- 时长限制检查
-- 文件大小检查
-- MIME 类型检测
-- 音频元数据验证
+Provides audio file security checks, including:
+- File format validation
+- Sample rate range check
+- Duration limit check
+- FileSizeCheck
+- MIME type detection
+- Audio metadata validation
 
-使用方式:
+Usage:
     from src.security.audio_validator import AudioValidator, validate_audio
 
-    # 创建验证器
+    # Create validator
     validator = AudioValidator()
 
-    # 验证音频文件
+    # ValidateAudioFile
     result = validator.validate("/path/to/audio.wav")
 
-    # 使用便捷函数
+    # Use convenience function
     result = validate_audio("/path/to/audio.wav", max_duration=300)
 """
 
@@ -38,17 +38,17 @@ logger = logging.getLogger(__name__)
 
 
 class AudioFormatError(BaseAudioFormatError):
-    """音频格式错误异常"""
+    """AudioFormatErrorException"""
     pass
 
 
 class AudioValidationError(BaseAudioProcessingError):
-    """音频验证失败异常"""
+    """AudioValidateFailException"""
     pass
 
 
 class AudioFormat(Enum):
-    """支持的音频格式"""
+    """Supported audio formats"""
     WAV = "wav"
     MP3 = "mp3"
     FLAC = "flac"
@@ -62,21 +62,21 @@ class AudioFormat(Enum):
 
 @dataclass
 class AudioMetadata:
-    """音频元数据"""
+    """Audio metadata"""
     format: AudioFormat
     sample_rate: int
     channels: int
     bit_depth: Optional[int]
-    duration: float  # 秒
+    duration: float  # seconds
     bitrate: Optional[int]  # bps
-    file_size: int  # 字节
+    file_size: int  # Bytes
     codec: Optional[str] = None
     is_lossless: bool = False
 
 
 @dataclass
 class AudioValidationResult:
-    """音频验证结果"""
+    """Audio validation result"""
     is_valid: bool
     metadata: Optional[AudioMetadata] = None
     errors: List[str] = field(default_factory=list)
@@ -85,17 +85,17 @@ class AudioValidationResult:
 
 class AudioValidator:
     """
-    音频文件验证器
+    Audio file validator
 
-    功能:
-    - 验证文件是否为有效的音频文件
-    - 检查文件格式是否支持
-    - 验证采样率范围
-    - 检查时长限制
-    - 验证文件大小
-    - 读取音频元数据
+    Features:
+    - Validate if file is valid audio file
+    - Check if file format is supported
+    - Validate sample rate range
+    - Check duration limit
+    - ValidateFileSize
+    - Read audio metadata
 
-    使用示例:
+    Usage example:
         validator = AudioValidator(
             allowed_formats=[AudioFormat.WAV, AudioFormat.MP3],
             max_duration=3600,
@@ -104,12 +104,12 @@ class AudioValidator:
 
         result = validator.validate("/path/to/audio.wav")
         if result.is_valid:
-            print(f"采样率: {result.metadata.sample_rate}")
+            print(f"Sample rate: {result.metadata.sample_rate}")
         else:
-            print(f"验证失败: {result.errors}")
+            print(f"ValidateFail: {result.errors}")
     """
 
-    # 常见音频文件魔数
+    # Common audio file magic numbers
     MAGIC_BYTES: Dict[AudioFormat, bytes] = {
         AudioFormat.WAV: b'RIFF',
         AudioFormat.FLAC: b'fLaC',
@@ -118,7 +118,7 @@ class AudioValidator:
         AudioFormat.M4A: b'ftyp',       # MP4/M4A
     }
 
-    # MIME 类型映射
+    # MIME type mapping
     MIME_TYPES: Dict[str, AudioFormat] = {
         'audio/wav': AudioFormat.WAV,
         'audio/x-wav': AudioFormat.WAV,
@@ -135,26 +135,26 @@ class AudioValidator:
         allowed_formats: Optional[List[AudioFormat]] = None,
         min_sample_rate: int = 8000,
         max_sample_rate: int = 192000,
-        min_duration: float = 0.1,  # 最小 100ms
-        max_duration: float = 3600,  # 最大 1 小时
+        min_duration: float = 0.1,  # Minimum 100ms
+        max_duration: float = 3600,  # Maximum 1 Hour
         max_file_size_mb: int = 500,
         defaults: Optional[AudioUtilsDefaults] = None
     ):
         """
-        初始化音频验证器
+        Initialize audio validator
 
         Args:
-            allowed_formats: 允许的音频格式列表
-            min_sample_rate: 最小采样率
-            max_sample_rate: 最大采样率
-            min_duration: 最小音频时长（秒）
-            max_duration: 最大音频时长（秒）
-            max_file_size_mb: 最大文件大小（MB）
-            defaults: 音频工具默认配置
+            allowed_formats: Allowed audio format list
+            min_sample_rate: MinimumSample rate
+            max_sample_rate: MaximumSample rate
+            min_duration: Minimum audio duration (seconds)
+            max_duration: Maximum audio duration (seconds)
+            max_file_size_mb: MaximumFileSize（MB）
+            defaults: Audio tools default configuration
         """
         self.defaults = defaults or AudioUtilsDefaults()
 
-        # 使用配置或参数
+        # Use configuration or parameters
         self.allowed_formats = allowed_formats or [
             AudioFormat(f) for f in self.defaults.allowed_audio_formats
         ] if hasattr(self.defaults, 'allowed_audio_formats') else [
@@ -175,40 +175,40 @@ class AudioValidator:
         check_metadata: bool = True
     ) -> AudioValidationResult:
         """
-        验证音频文件
+        ValidateAudioFile
 
         Args:
-            path: 音频文件路径
-            check_metadata: 是否读取元数据进行验证
+            path: AudioFile path
+            check_metadata: Whether to read metadata for validation
 
         Returns:
-            AudioValidationResult 验证结果
+            AudioValidationResult Validation result
         """
         result = AudioValidationResult(is_valid=False)
         
-        # 0. 先转换为 Path 对象，检查文件是否存在
-        # 不存在的文件返回 is_valid=False，而不是抛出异常
+        # 0. First convert to Path object, check if file exists
+        # If file does not exist, return is_valid=False instead of raising exception
         if isinstance(path, str):
             path = Path(path)
         
-        # 1. 检查文件是否存在
+        # 1. Check if file exists
         if not path.exists():
-            result.errors.append(f"文件不存在: {path}")
+            result.errors.append(f"File does not exist: {path}")
             return result
         
-        # 2. 检查路径安全性（仅对存在的文件）
+        # 2. Check path security (only for existing files)
         try:
             path = safe_path(path)
         except Exception as e:
-            result.errors.append(f"路径安全检查失败: {str(e)}")
+            result.errors.append(f"PathSecurityCheckFail: {str(e)}")
             return result
 
-        # 2. 检查文件大小
+        # 2. CheckFileSize
         self._check_file_size(path, result)
         if result.errors:
             return result
 
-        # 3. 检测文件格式
+        # 3. DetectionFileFormat
         detected_format = self._detect_format(path)
         result.metadata = AudioMetadata(
             format=detected_format,
@@ -220,15 +220,15 @@ class AudioValidator:
             file_size=path.stat().st_size
         )
 
-        # 4. 检查格式是否允许
+        # 4. Check if format is allowed
         if not self._is_format_allowed(detected_format):
             result.errors.append(
-                f"不支持的音频格式: {detected_format.value}，"
-                f"允许的格式: {[f.value for f in self.allowed_formats]}"
+                f"Unsupported audio formats: {detected_format.value}, "
+                f"Allowed formats: {[f.value for f in self.allowed_formats]}"
             )
             return result
 
-        # 5. 读取元数据（如果需要）
+        # 5. Read metadata (if needed)
         if check_metadata:
             self._check_metadata(path, result)
 
@@ -242,26 +242,26 @@ class AudioValidator:
         path: Path,
         result: AudioValidationResult
     ) -> None:
-        """检查文件大小"""
+        """CheckFileSize"""
         file_size = path.stat().st_size
 
         if file_size < self.min_file_size_bytes:
             result.errors.append(
-                f"文件太小 ({file_size} bytes)，最小要求: {self.min_file_size_bytes} bytes"
+                f"File too small ({file_size} bytes), minimum requirement: {self.min_file_size_bytes} bytes"
             )
 
         if file_size > self.max_file_size_bytes:
             result.errors.append(
-                f"文件太大 ({file_size / 1024 / 1024:.1f} MB)，"
-                f"最大允许: {self.max_file_size_bytes / 1024 / 1024:.1f} MB"
+                f"File too large ({file_size / 1024 / 1024:.1f} MB), "
+                f"Maximum allowed: {self.max_file_size_bytes / 1024 / 1024:.1f} MB"
             )
 
     def _detect_format(self, path: Path) -> AudioFormat:
-        """检测音频文件格式"""
-        # 1. 通过扩展名猜测
+        """DetectionAudioFileFormat"""
+        # 1. Guess by extension
         ext = path.suffix.lower().lstrip('.')
 
-        # 特殊处理
+        # Special processing
         if ext in ['mp2', 'mp3']:
             ext = 'mp3'
         elif ext in ['aif', 'aifc']:
@@ -272,7 +272,7 @@ class AudioValidator:
         except ValueError:
             pass
 
-        # 2. 通过魔数检测
+        # 2. Detect by magic number
         try:
             with open(path, 'rb') as f:
                 header = f.read(16)
@@ -281,17 +281,17 @@ class AudioValidator:
                     if header.startswith(magic):
                         return fmt
 
-                # MP3 特殊检测（可能有 ID3 头）
+                # MP3 special detection (may have ID3 header)
                 if len(header) >= 3 and header[0:2] in [b'\xff\xfb', b'\xff\xf3', b'\xff\xf2']:
                     return AudioFormat.MP3
 
         except Exception as e:
-            logger.warning(f"无法读取文件头: {e}")
+            logger.warning(f"Cannot read file header: {e}")
 
         return AudioFormat.UNKNOWN
 
     def _is_format_allowed(self, fmt: AudioFormat) -> bool:
-        """检查格式是否允许"""
+        """Check if format is allowed"""
         if fmt == AudioFormat.UNKNOWN:
             return False
         return fmt in self.allowed_formats
@@ -301,85 +301,85 @@ class AudioValidator:
         path: Path,
         result: AudioValidationResult
     ) -> None:
-        """检查音频元数据"""
+        """Check audio metadata"""
         try:
             import soundfile as sf
 
-            # 读取音频信息
+            # ReadAudioInfo
             info = sf.info(str(path))
 
-            # 更新元数据
+            # Update metadata
             result.metadata.sample_rate = info.samplerate
             result.metadata.channels = info.channels
             result.metadata.duration = info.duration
             result.metadata.codec = info.format
 
-            # 检测是否为无损格式
+            # Detect if lossless formats
             result.metadata.is_lossless = info.format.lower() in ['wav', 'flac', 'aiff']
 
-            # 获取子格式信息
+            # Get sub-format info
             if hasattr(info, 'subtype'):
                 if info.subtype in ['PCM_16', 'PCM_24', 'PCM_32']:
                     result.metadata.bit_depth = int(info.subtype.split('_')[1])
 
-            # 检查采样率
+            # CheckSample rate
             if result.metadata.sample_rate < self.min_sample_rate:
                 result.errors.append(
-                    f"采样率过低 ({result.metadata.sample_rate} Hz)，"
-                    f"最小要求: {self.min_sample_rate} Hz"
+                    f"Sample rate too low ({result.metadata.sample_rate} Hz), "
+                    f"Minimum requirement: {self.min_sample_rate} Hz"
                 )
             elif result.metadata.sample_rate > self.max_sample_rate:
                 result.warnings.append(
-                    f"采样率较高 ({result.metadata.sample_rate} Hz)，"
-                    f"可能影响处理速度"
+                    f"Sample rate too high ({result.metadata.sample_rate} Hz), "
+                    f"May affect processing speed"
                 )
 
-            # 检查时长
+            # Check duration
             if result.metadata.duration < self.min_duration:
                 result.errors.append(
-                    f"音频时长过短 ({result.metadata.duration:.2f}s)，"
-                    f"最小要求: {self.min_duration}s"
+                    f"Audio duration too short ({result.metadata.duration:.2f}s), "
+                    f"Minimum requirement: {self.min_duration}s"
                 )
             elif result.metadata.duration > self.max_duration:
                 result.errors.append(
-                    f"音频时长过长 ({result.metadata.duration:.1f}s)，"
-                    f"最大允许: {self.max_duration}s"
+                    f"Audio duration too long ({result.metadata.duration:.1f}s), "
+                    f"Maximum allowed: {self.max_duration}s"
                 )
 
-            # 检查声道数
+            # Check channel count
             if result.metadata.channels > 2:
                 result.warnings.append(
-                    f"音频为 {result.metadata.channels} 声道，将被转换为立体声"
+                    f"Audio is {result.metadata.channels} channels, will be converted to stereo"
                 )
 
         except ImportError:
-            result.warnings.append("soundfile 未安装，无法验证音频元数据")
+            result.warnings.append("soundfile not installed, cannot validate audio metadata")
         except Exception as e:
-            result.errors.append(f"无法读取音频元数据: {e}")
+            result.errors.append(f"Cannot read audio metadata: {e}")
 
     def get_metadata(
         self,
         path: Union[str, Path]
     ) -> Optional[AudioMetadata]:
         """
-        获取音频元数据
+        Get audio metadata
 
         Args:
-            path: 音频文件路径
+            path: AudioFile path
 
         Returns:
-            AudioMetadata 或 None
+            AudioMetadata or None
         """
         result = self.validate(path, check_metadata=True)
         return result.metadata if result.is_valid else None
 
 
-# 全局验证器实例
+# Global validator instance
 _default_validator: Optional[AudioValidator] = None
 
 
 def get_audio_validator() -> AudioValidator:
-    """获取全局音频验证器实例"""
+    """Get global audio validator instance"""
     global _default_validator
     if _default_validator is None:
         _default_validator = AudioValidator()
@@ -392,21 +392,21 @@ def validate_audio(
     check_metadata: bool = True
 ) -> AudioValidationResult:
     """
-    便捷的音频验证函数
+    Convenient audio validation function
 
     Args:
-        path: 音频文件路径
-        max_duration: 最大时长限制（秒）
-        check_metadata: 是否检查元数据
+        path: AudioFile path
+        max_duration: maximum duration limit (seconds)
+        check_metadata: whether to check metadata
 
     Returns:
         AudioValidationResult
 
-    示例:
+    Example:
         result = validate_audio("/path/to/audio.wav")
         if result.is_valid:
-            print(f"音频有效，采样率: {result.metadata.sample_rate}")
+            print(f"Audio valid, sample rate: {result.metadata.sample_rate}")
     """
-    # 每次创建新的验证器实例，避免线程安全问题
+    # Create new validator instance each time to avoid thread safety issues
     validator = AudioValidator(max_duration=max_duration)
     return validator.validate(path, check_metadata)

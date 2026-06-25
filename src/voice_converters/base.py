@@ -1,6 +1,6 @@
 """
-Base Voice Converter - 声音转换抽象基类
-定义所有声音转换引擎的通用接口
+Base Voice Converter - Voice conversion abstract base class
+Defines common interface for all voice conversion engines
 """
 
 from abc import ABC, abstractmethod
@@ -19,17 +19,17 @@ from src.exceptions import (
 
 
 class F0Method(Enum):
-    """基频提取方法"""
-    PM = "pm"           # 倒谱法，快速但精度一般
-    DIO = "dio"         # DIO 算法，精度较高
-    CREPE = "crepe"     # 深度学习法，最精确但最慢
-    CREPE_TINY = "crepe_tiny"  # 轻量级 CREPE
-    HARVEST = "harvest"  # Harvest 算法，稳定但慢
-    RMVPE = "rmvpe"     # 重采样基频预测
+    """F0 extraction method"""
+    PM = "pm"           # Cepstrum method，Fast but moderate accuracy
+    DIO = "dio"         # DIO algorithm，Higher accuracy
+    CREPE = "crepe"     # Deep learning method, most accurate but slowest
+    CREPE_TINY = "crepe_tiny"  # Lightweight CREPE
+    HARVEST = "harvest"  # Harvest algorithm, stable but slow
+    RMVPE = "rmvpe"     # Resampling F0 prediction
 
 
 class ConverterType(Enum):
-    """转换器类型"""
+    """Converter class type"""
     RVC = "rvc"
     SOVITS = "sovits"
     UNKNOWN = "unknown"
@@ -38,34 +38,34 @@ class ConverterType(Enum):
 @dataclass
 class ConversionParams:
     """
-    声音转换通用参数
+    Voice conversion common parameters
     
-    这些参数在所有引擎中统一支持，
-    底层会自动映射到各引擎的具体参数
+    These parameters are uniformly supported across all engines,
+    Bottom layer will automatically map to specific parameters of each engine
     """
-    # 音高调整
-    pitch_shift: float = 0.0          # 半音调整 (-24 to +24)
-    pitch_algo: str = "rmvpe"         # 音高算法 (pm/dio/crepe/harvest/rmvpe)
+    # Pitch adjustment
+    pitch_shift: float = 0.0          # Semitone shift (-24 to +24)
+    pitch_algo: str = "rmvpe"         # Pitch algorithm (pm/dio/crepe/harvest/rmvpe)
     
-    # 音色控制
-    vpm: float = 0.5                  # 音素周期匹配 (0.0-1.0)
-    timbre_protection: float = 0.5    # 音色保护 (0.0-1.0)
+    # Timbre control
+    vpm: float = 0.5                  # Voicing period match (0.0-1.0)
+    timbre_protection: float = 0.5    # Timbre protection (0.0-1.0)
     
-    # 响度控制
-    rms_mix: float = 0.5              # RMS 响度混合 (0.0-1.0)
-    loudness_match: bool = True       # 是否匹配响度
+    # Loudness control
+    rms_mix: float = 0.5              # RMS loudness mix (0.0-1.0)
+    loudness_match: bool = True       # Whether to match loudness
     
-    # 质量控制
-    sample_rate: int = 40000          # 输出采样率
-    hop_length: int = 128              # 帧移
-    f0_factor: float = 1.0            # 基频缩放因子
+    # Quality control
+    sample_rate: int = 40000          # OutputSample rate
+    hop_length: int = 128              # Frame shift
+    f0_factor: float = 1.0            # F0 scaling factor
     
-    # 扩散参数 (SoVITS)
-    diffusion_steps: int = 10          # 扩散步数
-    diffusion_temperature: float = 1.0 # 扩散温度
+    # DiffusionParameter (SoVITS)
+    diffusion_steps: int = 10          # Diffusion steps
+    diffusion_temperature: float = 1.0 # DiffusionTemperature
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """Convert to dictionary"""
         return {
             "pitch_shift": self.pitch_shift,
             "pitch_algo": self.pitch_algo,
@@ -82,28 +82,28 @@ class ConversionParams:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ConversionParams":
-        """从字典创建"""
+        """FromDictionaryCreate"""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
 class ConversionResult:
     """
-    声音转换结果
+    Voice conversion result
     
-    统一返回格式，包含转换后的音频和元信息
+    Unified return format, contains converted audio and metadata
     """
-    audio: np.ndarray                 # 转换后的音频 (samples, channels) 或 (samples,)
-    sampling_rate: int                # 采样率
-    info: Dict[str, Any] = field(default_factory=dict)  # 转换信息
+    audio: np.ndarray                 # Converted audio (samples, channels) or (samples,)
+    sampling_rate: int                # Sample rate
+    info: Dict[str, Any] = field(default_factory=dict)  # ConvertInfo
     
-    # 质量指标
+    # Quality metrics
     pitch_range: Optional[tuple] = None  # (min_hz, max_hz)
-    duration: Optional[float] = None     # 持续时间(秒)
-    rms_db: Optional[float] = None       # RMS 电平(dB)
+    duration: Optional[float] = None     # Duration (seconds)
+    rms_db: Optional[float] = None       # RMS level (dB)
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """Convert to dictionary"""
         return {
             "audio_shape": self.audio.shape if self.audio is not None else None,
             "sampling_rate": self.sampling_rate,
@@ -116,17 +116,17 @@ class ConversionResult:
 
 @dataclass
 class ModelInfo:
-    """模型信息"""
-    name: str                          # 模型名称
-    type: ConverterType                 # 模型类型
-    version: Optional[str] = None      # 版本号
-    sample_rate: int = 40000          # 原始采样率
-    description: Optional[str] = None  # 描述
-    file_path: Optional[str] = None    # 文件路径
-    config_path: Optional[str] = None  # 配置文件路径
-    index_path: Optional[str] = None   # 索引文件路径
-    is_loaded: bool = False           # 是否已加载
-    memory_usage: Optional[int] = None # 内存占用(字节)
+    """ModelInfo"""
+    name: str                          # ModelName
+    type: ConverterType                 # Model class type
+    version: Optional[str] = None      # Version number
+    sample_rate: int = 40000          # Original sample rate
+    description: Optional[str] = None  # Description
+    file_path: Optional[str] = None    # File path
+    config_path: Optional[str] = None  # Configuration filePath
+    index_path: Optional[str] = None   # IndexFile path
+    is_loaded: bool = False           # Whether loaded
+    memory_usage: Optional[int] = None # Memory usage (bytes)
     
     def __repr__(self) -> str:
         return f"ModelInfo({self.type.value}: {self.name})"
@@ -134,29 +134,29 @@ class ModelInfo:
 
 class BaseVoiceConverter(ABC):
     """
-    声音转换器基类
+    Voice converter base class
     
-    定义所有声音转换引擎的通用接口。
-    支持按需加载、显存管理和优雅降级。
+    Defines common interface for all voice conversion engines。
+    Supports on-demand loading, VRAM management and graceful degradation.
     
-    通用参数:
-    - pitch_shift: 半音调整
-    - vpm: 音素周期匹配
-    - rms_mix: 响度混合
+    Common parameters:
+    - pitch_shift: Semitone shift
+    - vpm: Voicing period match
+    - rms_mix: Loudness mix
     """
     
-    # 类属性：支持的 f0 方法
+    # ClassAttribute：Supports f0 method
     SUPPORTED_F0_METHODS: List[F0Method] = []
     
-    # 类属性：是否需要索引文件
+    # Class attribute: whether index file is needed
     REQUIRE_INDEX: bool = False
     
     def __init__(self, device: Optional[str] = None):
         """
-        初始化声音转换器
+        InitializeVoice converter
         
         Args:
-            device: 运行设备 ('cpu', 'cuda', 'mps')
+            device: Run device ('cpu', 'cuda', 'mps')
         """
         self.device = device or self._get_default_device()
         self._model = None
@@ -173,20 +173,20 @@ class BaseVoiceConverter(ABC):
         **kwargs
     ) -> ModelInfo:
         """
-        加载模型
+        LoadModel
         
         Args:
-            model_path: 模型文件路径 (.pth)
-            config_path: 配置文件路径 (.json)
-            index_path: 索引文件路径 (.index)
-            **kwargs: 其他参数
+            model_path: ModelFile path (.pth)
+            config_path: Configuration filePath (.json)
+            index_path: IndexFile path (.index)
+            **kwargs: OtherParameter
             
         Returns:
-            ModelInfo: 模型信息
+            ModelInfo: ModelInfo
             
         Raises:
-            FileNotFoundError: 模型文件不存在
-            ValueError: 模型格式错误
+            FileNotFoundError: Model file does not exist
+            ValueError: ModelFormatError
         """
         pass
     
@@ -199,29 +199,29 @@ class BaseVoiceConverter(ABC):
         **kwargs
     ) -> ConversionResult:
         """
-        执行声音转换
+        Execute voice conversion
         
         Args:
-            audio: 输入音频 (samples,) 或 (channels, samples)
-            sample_rate: 输入采样率
-            params: 转换参数
-            **kwargs: 其他参数覆盖
+            audio: Input audio (samples,) or (channels, samples)
+            sample_rate: Input sample rate
+            params: ConvertParameter
+            **kwargs: Other parameter override
             
         Returns:
-            ConversionResult: 转换结果
+            ConversionResult: Conversion result
         """
         pass
     
     @abstractmethod
     def unload(self):
         """
-        卸载模型，释放显存
+        Unload model, release VRAM
         """
         pass
     
     @abstractmethod
     def get_model_info(self) -> Optional[ModelInfo]:
-        """获取当前模型信息"""
+        """Get current model info"""
         pass
     
     def convert_file(
@@ -232,40 +232,40 @@ class BaseVoiceConverter(ABC):
         **kwargs
     ) -> bool:
         """
-        转换音频文件
+        ConvertAudioFile
         
         Args:
-            input_path: 输入文件路径
-            output_path: 输出文件路径
-            params: 转换参数
-            **kwargs: 其他参数
+            input_path: Input file path
+            output_path: Output file path
+            params: ConvertParameter
+            **kwargs: OtherParameter
             
         Returns:
-            bool: 是否成功
+            bool: Whether successful
         """
         from src.utils.audio_io import AudioLoader, AudioSaver
         
         if not self._is_loaded:
             raise RuntimeError("Model not loaded. Call load_model() first.")
         
-        # 加载音频
+        # LoadAudio
         loader = AudioLoader(target_sr=params.sample_rate if params else 40000)
         audio, sr = loader.load(input_path)
         
-        # 执行转换
+        # ExecuteConvert
         result = self.convert(audio, sr, params, **kwargs)
         
-        # 保存音频
+        # SaveAudio
         saver = AudioSaver(normalize=True)
         return saver.save(result.audio, output_path, result.sampling_rate)
     
     @property
     def is_loaded(self) -> bool:
-        """检查模型是否已加载"""
+        """Check if model is loaded"""
         return self._is_loaded
     
     def _get_default_device(self) -> str:
-        """获取默认运行设备"""
+        """Get default run device"""
         try:
             import torch
             if torch.cuda.is_available():
@@ -278,40 +278,40 @@ class BaseVoiceConverter(ABC):
     
     def _validate_audio(self, audio: np.ndarray) -> np.ndarray:
         """
-        验证并规范化音频输入
+        Validate and normalize audio input
         
         Args:
-            audio: 输入音频
+            audio: Input audio
             
         Returns:
-            规范化的音频数组 (samples,)
+            Normalize audio array (samples,)
         """
         audio = np.array(audio, dtype=np.float32)
         
-        # 处理多通道 -> 单声道
+        # Process multiple channels -> mono
         if audio.ndim == 2:
             audio = np.mean(audio, axis=0)
         elif audio.ndim > 2:
             raise ValueError(f"Invalid audio shape: {audio.shape}")
         
-        # 确保是 1D
+        # Ensure it is 1D
         if audio.ndim != 1:
             audio = audio.flatten()
         
         return audio
     
     def _validate_params(self, params: Optional[ConversionParams]) -> ConversionParams:
-        """验证并规范化参数"""
+        """Validate and normalize parameters"""
         if params is None:
             params = ConversionParams()
         
-        # 限制 pitch_shift 范围
+        # Limit pitch_shift range
         params.pitch_shift = max(-24, min(24, params.pitch_shift))
         
-        # 限制 vpm 范围
+        # Limit vpm range
         params.vpm = max(0.0, min(1.0, params.vpm))
         
-        # 限制 rms_mix 范围
+        # Limit rms_mix range
         params.rms_mix = max(0.0, min(1.0, params.rms_mix))
         
         return params
@@ -322,8 +322,8 @@ class BaseVoiceConverter(ABC):
         sample_rate: int,
         **kwargs
     ) -> ConversionResult:
-        """创建标准结果对象"""
-        # 计算基本信息
+        """Create standard result object"""
+        # Calculate basic info
         duration = len(audio) / sample_rate if audio is not None else 0
         rms = self._calculate_rms(audio)
         
@@ -336,7 +336,7 @@ class BaseVoiceConverter(ABC):
         )
     
     def _calculate_rms(self, audio: np.ndarray) -> float:
-        """计算 RMS 电平(dB)"""
+        """Calculate RMS level (dB)"""
         if audio is None or len(audio) == 0:
             return -float('inf')
         
@@ -352,22 +352,22 @@ class BaseVoiceConverter(ABC):
         top_db: int = 40
     ) -> np.ndarray:
         """
-        去除音频中的静音部分
+        Remove silent parts from audio
         
         Args:
-            audio: 输入音频
-            sample_rate: 采样率
-            top_db: 静音阈值 (dB)
+            audio: Input audio
+            sample_rate: Sample rate
+            top_db: silence threshold (dB)
             
         Returns:
-            去除静音后的音频
+            Remove audio after silence
         """
         librosa = self._lazy_import_module("librosa")
         if librosa is None:
             return audio
         
         try:
-            # 计算能量
+            # Calculate energy
             hop_length = 512
             rms = librosa.feature.rms(
                 y=audio,
@@ -375,14 +375,14 @@ class BaseVoiceConverter(ABC):
                 hop_length=hop_length
             )[0]
             
-            # 找到非静音区域
+            # Find non-silent regions
             threshold = librosa.db_to_amplitude(-top_db)
             non_silent = np.where(rms > threshold)[0]
             
             if len(non_silent) == 0:
                 return audio
             
-            # 扩展边缘
+            # Expand edges
             frame_start = max(0, non_silent[0] - 5)
             frame_end = min(len(rms), non_silent[-1] + 5)
             
@@ -399,45 +399,45 @@ class BaseVoiceConverter(ABC):
         return f"{self.__class__.__name__}({self.device}, {status})"
     
     def __enter__(self) -> "BaseVoiceConverter":
-        """上下文管理器入口"""
+        """Context manager entry"""
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """上下文管理器出口，自动卸载"""
+        """Context manager exit, auto cleanup"""
         self.unload()
         return False
 
 
 class LazyImportMixin:
     """
-    延迟导入混入类
+    Delay import mixin class
     
-    提供延迟导入深度学习依赖的能力，
-    避免在模块加载时就检查所有依赖。
-    每个子类实例有独立的缓存，避免互相干扰。
+    Provides lazy import for deep learning dependencies,
+    Avoid checking all dependencies at module load time.
+    Each subclass instance has independent cache to avoid interference.
     """
     
-    # 子类应设置此属性列出需要的模块
+    # Subclass should set this attribute to list required modules
     REQUIRED_PACKAGES: List[str] = []
     
-    # 缓存已检查的包状态 - 实例变量
+    # Cached checked package status - instance variable
     _package_cache: Dict[str, Optional[bool]] = {}
     
     def __init__(self):
-        # 每个实例独立的缓存
+        # Each instance has independent cache
         if not hasattr(self, '_instance_cache'):
             self._instance_cache: Dict[str, Optional[bool]] = {}
     
     @classmethod
     def _check_dependency(cls, package: str) -> bool:
         """
-        检查依赖是否可用（类级别，检查共享缓存）
+        Check if dependency is available (class level, check shared cache)
         
         Args:
-            package: 包名
+            package: package name
             
         Returns:
-            bool: 是否可用
+            bool: whether available
         """
         if package in cls._package_cache:
             return cls._package_cache[package]
@@ -453,19 +453,19 @@ class LazyImportMixin:
     @classmethod
     def _check_dependency_instance(cls, package: str) -> bool:
         """
-        检查依赖是否可用（实例级别，每个实例独立缓存）
+        Check if dependency is available (instance level, each instance has independent cache)
         
         Args:
-            package: 包名
+            package: package name
             
         Returns:
-            bool: 是否可用
+            bool: whether available
         """
-        # 先检查实例缓存
+        # First check instance cache
         if hasattr(cls, '_instance_cache') and package in cls._instance_cache:
             return cls._instance_cache[package]
         
-        # 检查类缓存
+        # CheckClassCache
         if package in cls._package_cache:
             result = cls._package_cache[package]
         else:
@@ -477,7 +477,7 @@ class LazyImportMixin:
                 cls._package_cache[package] = False
                 result = False
         
-        # 存入实例缓存
+        # Store in instance cache
         if hasattr(cls, '_instance_cache'):
             cls._instance_cache[package] = result
         
@@ -486,17 +486,17 @@ class LazyImportMixin:
     @classmethod
     def _lazy_import_module(cls, package: str, submodule: Optional[str] = None):
         """
-        延迟导入模块
+        DelayImportModule
         
         Args:
-            package: 包名
-            submodule: 子模块名
+            package: package name
+            submodule: submodule name
             
         Returns:
-            导入的模块
+            ImportModule
             
         Raises:
-            ImportError: 模块不可用
+            ImportError: module not available
         """
         if not cls._check_dependency(package):
             raise ImportError(
@@ -510,7 +510,7 @@ class LazyImportMixin:
     
     @classmethod
     def _check_all_dependencies(cls) -> List[str]:
-        """检查所有依赖，返回缺失的包列表"""
+        """Check all dependencies, return missing package list"""
         missing = []
         for pkg in cls.REQUIRED_PACKAGES:
             if not cls._check_dependency(pkg):
@@ -519,22 +519,22 @@ class LazyImportMixin:
 
 
 class EngineCapability:
-    """引擎能力描述"""
+    """Engine capability description"""
     
-    # 是否支持 f0 调整
+    # Whether f0 adjustment is supported
     SUPPORTS_F0: bool = True
     
-    # 是否支持音色保护
+    # Whether timbre protection is supported
     SUPPORTS_TIMBRE_PROTECTION: bool = True
     
-    # 是否支持扩散模式
+    # Whether diffusion mode is supported
     SUPPORTS_DIFFUSION: bool = False
     
-    # 是否支持说话人嵌入
+    # Whether speaker embedding is supported
     SUPPORTS_SPEAKER_EMBEDDING: bool = False
     
-    # 最大支持采样率
+    # MaximumSupportsSample rate
     MAX_SAMPLE_RATE: int = 48000
     
-    # 推荐采样率
+    # Recommended sample rate
     RECOMMENDED_SAMPLE_RATE: int = 40000

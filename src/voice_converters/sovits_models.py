@@ -1,15 +1,15 @@
 """
-So-VITS-SVC 模型架构定义
+So-VITS-SVC Model architecture definition
 
-包含 So-VITS-SVC 4.0/4.1 的核心模型结构：
-- VITSDecoder: VITS 解码器 (因果/非因果)
-- VITSGenerator: VITS 主生成器
-- TextEncoder: 文本/内容编码器
-- LengthRegulator: 长度调节器
-- PosteriorEncoder: 后验编码器
-- Flow: 归一化流
+Contains So-VITS-SVC 4.0/4.1 core model structures:
+- VITSDecoder: VITS Decoder (Causal/Non-causal)
+- VITSGenerator: VITS Main generator
+- TextEncoder: Text/Content encoder
+- LengthRegulator: Length regulator
+- PosteriorEncoder: Posterior encoder
+- Flow: NormalizationFlow
 
-这些类用于加载和运行 So-VITS 模型推理。
+These classes are used to load and run So-VITS model inference.
 """
 
 from typing import Optional, Tuple, List, Any, Dict
@@ -22,7 +22,7 @@ from torch.nn import Conv1d, ConvTranspose1d
 
 
 class LeakyReLU(nn.Module):
-    """带泄漏的 ReLU"""
+    """Leaky ReLU"""
 
     def __init__(self, negative_slope: float = 0.1):
         super().__init__()
@@ -33,7 +33,7 @@ class LeakyReLU(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    """残差块"""
+    """Residual block"""
 
     def __init__(self, channels: int, kernel_size: int = 3, dilation: Tuple[int, int, int] = (1, 3, 5)):
         super().__init__()
@@ -58,9 +58,9 @@ class ResidualBlock(nn.Module):
 
 class TextEncoder(nn.Module):
     """
-    文本/内容编码器
+    Text/Content encoder
 
-    将输入特征编码为潜在表示
+    Encode input features into latent representation
     """
 
     def __init__(
@@ -70,18 +70,18 @@ class TextEncoder(nn.Module):
         hidden_channels: int = 192,
         n_layers: int = 6,
         kernel_size: int = 5,
-        dropout: float = 0.1,
+        Dropout: float = 0.1,
     ):
         super().__init__()
         self.n_vocab = n_vocab
         self.out_channels = out_channels
         self.hidden_channels = hidden_channels
 
-        # 嵌入层
+        # Embedding layer
         self.emb = nn.Embedding(n_vocab, hidden_channels)
         nn.init.normal_(self.emb.weight, 0.0, hidden_channels ** -0.5)
 
-        # 卷积层
+        # ConvolutionLayer
         self.convs = nn.ModuleList()
         for _ in range(n_layers):
             self.convs.append(
@@ -94,32 +94,32 @@ class TextEncoder(nn.Module):
                     ),
                     nn.BatchNorm1d(hidden_channels),
                     LeakyReLU(0.1),
-                    nn.Dropout(dropout),
+                    nn.Dropout(Dropout),
                 )
             )
 
-        # 输出投影
+        # Output projection
         self.proj = Conv1d(hidden_channels, out_channels, 1)
 
     def forward(self, x: torch.Tensor, input_lengths: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: 输入序列 [batch, time]
-            input_lengths: 输入长度 [batch]
+            x: Input sequence [batch, time]
+            input_lengths: Input length [batch]
 
         Returns:
-            (编码输出, 掩码)
+            (Encoder output, mask)
         """
-        # 嵌入
+        # Embedding
         x = self.emb(x).transpose(1, 2)  # [batch, hidden, time]
 
-        # 卷积
+        # Convolution
         for conv in self.convs:
             x = conv(x)
 
-        # 输出
+        # Output
         x = self.proj(x)
 
         return x, None
@@ -127,9 +127,9 @@ class TextEncoder(nn.Module):
 
 class ContentEncoder(nn.Module):
     """
-    内容编码器 (用于 HubERT/ContentVec 特征)
+    Content encoder (for HubERT/ContentVec features)
 
-    直接编码连续特征
+    Directly encode continuous features
     """
 
     def __init__(
@@ -144,10 +144,10 @@ class ContentEncoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        # 输入投影
+        # Input projection
         self.input_proj = Conv1d(in_channels, hidden_channels, 1)
 
-        # 卷积层
+        # ConvolutionLayer
         self.convs = nn.ModuleList()
         for _ in range(n_layers):
             self.convs.append(
@@ -158,18 +158,18 @@ class ContentEncoder(nn.Module):
                 )
             )
 
-        # 输出投影
+        # Output projection
         self.output_proj = Conv1d(hidden_channels, out_channels, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: 输入特征 [batch, in_channels, time]
+            x: Input features [batch, in_channels, time]
 
         Returns:
-            编码输出 [batch, out_channels, time]
+            Encoder output [batch, out_channels, time]
         """
         x = self.input_proj(x)
 
@@ -181,7 +181,7 @@ class ContentEncoder(nn.Module):
 
 
 class LengthRegulator(nn.Module):
-    """长度调节器 (用于并行化)"""
+    """Length regulator (for parallelization)"""
 
     def __init__(
         self,
@@ -205,35 +205,35 @@ class LengthRegulator(nn.Module):
         max_len: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: 输入 [batch, channels, time]
-            durations: 时长 [batch, time]
-            max_len: 最大长度
+            x: Input [batch, channels, time]
+            durations: Duration [batch, time]
+            max_len: MaximumLength
 
         Returns:
-            (扩展后输出, 输出长度)
+            (Expanded output, output length)
         """
         if durations is None:
-            # 预测时长
+            # Predict duration
             durations = self.duration_predictor(x.transpose(1, 2)).squeeze(1)
-            durations = durations.exp()  # 确保正值
+            durations = durations.exp()  # Ensure positive values
 
-        # 扩展
+        # Expand
         x = self.expand_by_durations(x, durations, max_len)
 
         return x, durations.sum(dim=-1).long()
 
     def expand_by_durations(self, x: torch.Tensor, durations: torch.Tensor, max_len: Optional[int] = None) -> torch.Tensor:
-        """根据时长扩展序列"""
+        """Expand sequence based on duration"""
         batch_size, channels, time = x.shape
         durations = durations.long()
 
         if max_len is None:
             max_len = durations.sum(dim=-1).max().item()
 
-        # 扩展
+        # Expand
         output = torch.zeros(batch_size, channels, max_len, device=x.device, dtype=x.dtype)
 
         for i in range(batch_size):
@@ -249,15 +249,15 @@ class LengthRegulator(nn.Module):
 
 class PosteriorEncoder(nn.Module):
     """
-    后验编码器
+    Posterior encoder
 
-    将 Mel 频谱编码为潜在表示
+    Encode Mel spectrum into latent representation
     """
 
     def __init__(
         self,
-        in_channels: int = 80,  # Mel 频谱通道数
-        out_channels: int = 192,  # 潜在空间维度
+        in_channels: int = 80,  # Mel spectrum channel count
+        out_channels: int = 192,  # Latent space dimension
         hidden_channels: int = 192,
         n_layers: int = 16,
         kernel_size: int = 5,
@@ -266,10 +266,10 @@ class PosteriorEncoder(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        # 输入卷积
+        # Input convolution
         self.input_conv = Conv1d(in_channels, hidden_channels, 1)
 
-        # WaveNet 风格的残差块
+        # WaveNet style residual block
         self.resblocks = nn.ModuleList()
         for i in range(n_layers):
             dilation = 2 ** (i % 8)
@@ -280,23 +280,23 @@ class PosteriorEncoder(nn.Module):
                 )
             )
 
-        # 输出层
+        # OutputLayer
         self.proj_mean = Conv1d(hidden_channels, out_channels, 1)
         self.proj_std = Conv1d(hidden_channels, out_channels, 1)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: Mel 频谱 [batch, in_channels, time]
+            x: Mel spectrum [batch, in_channels, time]
 
         Returns:
-            (均值, 对数方差)
+            (mean, log variance)
         """
         x = self.input_conv(x)
 
-        # 残差连接
+        # ResidualConnection
         skips = []
         for resblock in self.resblocks:
             x = resblock(x)
@@ -313,9 +313,9 @@ class PosteriorEncoder(nn.Module):
 
 class Flow(nn.Module):
     """
-    归一化流
+    NormalizationFlow
 
-    用于 GAN 模式的 VITS
+    For GAN mode VITS
     """
 
     def __init__(
@@ -328,7 +328,7 @@ class Flow(nn.Module):
         super().__init__()
         self.in_channels = in_channels
 
-        # 仿射耦合层
+        # Affine coupling layer
         self.flows = nn.ModuleList()
         for _ in range(n_layers):
             self.flows.append(
@@ -341,13 +341,13 @@ class Flow(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        前向传播 (用于推理)
+        Forward pass (for inference)
 
         Args:
-            x: 输入 [batch, channels, time]
+            x: Input [batch, channels, time]
 
         Returns:
-            变换后输出
+            Shifted output
         """
         for flow in self.flows:
             x = flow['pre'](x)
@@ -356,7 +356,7 @@ class Flow(nn.Module):
             x = F.leaky_relu(x, 0.1)
             affine = flow['post'](x)
 
-            # 仿射变换
+            # Affine shift
             log_scale, bias = affine.chunk(2, dim=1)
             log_scale = torch.tanh(log_scale)
             x = x * log_scale.exp() + bias
@@ -365,7 +365,7 @@ class Flow(nn.Module):
 
 
 class VITSResBlock(nn.Module):
-    """VITS 残差块"""
+    """VITS residual block"""
 
     def __init__(self, channels: int, kernel_size: int = 3, dilation: Tuple[int, int, int] = (1, 3, 5)):
         super().__init__()
@@ -387,9 +387,9 @@ class VITSResBlock(nn.Module):
 
 class VITSDecoder(nn.Module):
     """
-    VITS 解码器
+    VITS Decoder
 
-    从潜在表示生成音频
+    Generate audio from latent representation
     """
 
     def __init__(
@@ -405,10 +405,10 @@ class VITSDecoder(nn.Module):
         super().__init__()
         self.in_channels = in_channels
 
-        # 输入卷积
+        # Input convolution
         self.input_conv = Conv1d(in_channels, upsample_initial_channel, 7, padding=3)
 
-        # 上采样层
+        # UpsampleLayer
         self.upsamples = nn.ModuleList()
         self.resblocks = nn.ModuleList()
 
@@ -424,16 +424,16 @@ class VITSDecoder(nn.Module):
                 )
             )
 
-            # 每个上采样层后的残差块
+            # Residual block after each upsample layer
             for _ in range(2):
                 self.resblocks.append(
                     VITSResBlock(channel // 2, resblock_kernel_sizes[0], resblock_dilation_sizes[0])
                 )
 
-        # 输出卷积
+        # OutputConvolution
         self.output_conv = Conv1d(channel // 2, out_channels, 7, padding=3)
 
-        # 初始化
+        # Initialize
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -444,13 +444,13 @@ class VITSDecoder(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: 潜在表示 [batch, in_channels, time]
+            x: Latent representation [batch, in_channels, time]
 
         Returns:
-            音频波形 [batch, out_channels, time * prod(upsample_rates)]
+            Audio waveform [batch, out_channels, time * prod(upsample_rates)]
         """
         x = self.input_conv(x)
         x = F.leaky_relu(x, 0.1)
@@ -459,7 +459,7 @@ class VITSDecoder(nn.Module):
             x = upsample(x)
             x = F.leaky_relu(x, 0.1)
 
-            # 应用残差块
+            # Apply residual block
             for _ in range(2):
                 if self.resblocks:
                     x = self.resblocks[i * 2](x)
@@ -472,9 +472,9 @@ class VITSDecoder(nn.Module):
 
 class VITSGenerator(nn.Module):
     """
-    So-VITS 主生成器
+    So-VITS Main generator
 
-    整合所有组件的完整 VITS 模型
+    Integrate all components into complete VITS model
     """
 
     def __init__(
@@ -495,24 +495,24 @@ class VITSGenerator(nn.Module):
         self.n_speakers = n_speakers
         self.gin_channels = gin_channels
 
-        # 编码器
+        # Encoder
         if n_vocab > 0:
             self.text_encoder = TextEncoder(n_vocab, hidden_channels, hidden_channels)
         else:
             self.content_encoder = ContentEncoder(1024, hidden_channels, hidden_channels)
 
-        # 说话人嵌入
+        # Speaker embedding
         if n_speakers > 0:
             self.emb = nn.Embedding(n_speakers, gin_channels)
 
-        # 长度调节器
+        # Length regulator
         self.length_regulator = LengthRegulator(hidden_channels)
 
-        # 流 (可选)
+        # Flow (optional)
         if use_transformer_flows:
             self.flow = Flow(hidden_channels, hidden_channels)
 
-        # 解码器
+        # Decoder
         self.decoder = VITSDecoder(
             in_channels=hidden_channels,
             out_channels=out_channels,
@@ -525,47 +525,47 @@ class VITSGenerator(nn.Module):
         speaker_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-        前向传播
+        Forward pass
 
         Args:
-            x: 输入特征或文本 [batch, channels, time] 或 [batch, time]
-            f0: F0 轨迹 [batch, time] (可选)
-            speaker_ids: 说话人 ID [batch]
+            x: Input features or text [batch, channels, time] or [batch, time]
+            f0: F0 trajectory [batch, time] (optional)
+            speaker_ids: Speaker IDs [batch]
 
         Returns:
-            音频 [batch, 1, time]
+            Audio [batch, 1, time]
         """
-        # 内容编码
+        # ContentEncode
         if hasattr(self, 'text_encoder'):
             x, _ = self.text_encoder(x)
         else:
-            # x 已经是编码后的特征
+            # x is already encoded features
             pass
 
-        # 说话人嵌入
+        # Speaker embedding
         if speaker_ids is not None and self.n_speakers > 0:
             g = self.emb(speaker_ids).unsqueeze(-1)  # [batch, gin, 1]
             x = x + g
 
-        # 长度调节
+        # Length adjustment
         x, _ = self.length_regulator(x)
 
-        # F0 调制 (如果提供)
+        # F0 modulation (if provided)
         if f0 is not None:
             x = self._apply_f0_modulation(x, f0)
 
-        # 解码
+        # Decode
         x = self.decoder(x)
 
         return x
 
     def _apply_f0_modulation(self, x: torch.Tensor, f0: torch.Tensor) -> torch.Tensor:
-        """F0 调制"""
-        # 简单的 F0 调制
+        """F0 modulation"""
+        # Simple F0 modulation
         if f0.shape[-1] != x.shape[-1]:
             f0 = F.interpolate(f0.unsqueeze(1), size=x.shape[-1], mode='linear').squeeze(1)
 
-        # 将 F0 添加到通道维度
+        # Add F0 to channel dimension
         f0_expanded = f0.unsqueeze(1).expand(-1, x.shape[1], -1) * 0.01
         x = x + f0_expanded
 
@@ -578,31 +578,31 @@ class VITSGenerator(nn.Module):
         speaker_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-        推理接口
+        InferenceInterface
 
         Args:
-            features: 内容特征 [batch, dim, time]
-            f0: F0 轨迹 [batch, time]
-            speaker_ids: 说话人 ID [batch]
+            features: ContentFeature [batch, dim, time]
+            f0: F0 trajectory [batch, time]
+            speaker_ids: Speaker IDs [batch]
 
         Returns:
-            音频 [batch, 1, time]
+            Audio [batch, 1, time]
         """
         return self.forward(features, f0, speaker_ids)
 
 
 class SimpleVITSModel(nn.Module):
     """
-    简化的 VITS 模型封装
+    Simplified VITS Model encapsulation
 
-    支持多种 So-VITS 模型格式，自动适配
+    Supports multiple So-VITS model formats, auto-adapts
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__()
         self.config = config or {}
 
-        # 提取配置
+        # ExtractionConfiguration
         self.n_vocab = self.config.get('n_vocab', 0)
         self.spec_channels = self.config.get('spec_channels', 80)
         self.hidden_channels = self.config.get('hidden_channels', 192)
@@ -611,7 +611,7 @@ class SimpleVITSModel(nn.Module):
         self.gin_channels = self.config.get('gin_channels', 0)
         self.use_flow = self.config.get('use_flow', False)
 
-        # 创建生成器
+        # Create generator
         self.generator = VITSGenerator(
             n_vocab=self.n_vocab,
             spec_channels=self.spec_channels,
@@ -628,7 +628,7 @@ class SimpleVITSModel(nn.Module):
         f0: Optional[torch.Tensor] = None,
         speaker_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """前向传播"""
+        """Forward pass"""
         return self.generator(x, f0, speaker_ids)
 
     def inference(
@@ -637,7 +637,7 @@ class SimpleVITSModel(nn.Module):
         f0: Optional[torch.Tensor] = None,
         speaker_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """推理接口"""
+        """InferenceInterface"""
         return self.generator.inference(features, f0, speaker_ids)
 
 
@@ -646,16 +646,16 @@ def create_vits_model_from_checkpoint(
     config: Optional[Dict[str, Any]] = None
 ) -> SimpleVITSModel:
     """
-    从检查点创建 VITS 模型
+    Create VITS model from checkpoint
 
     Args:
-        checkpoint: 模型检查点
-        config: 模型配置
+        checkpoint: Model checkpoint
+        config: ModelConfiguration
 
     Returns:
-        VITS 模型实例
+        VITS ModelInstance
     """
-    # 合并配置
+    # Merge configuration
     if isinstance(checkpoint, dict):
         if 'config' in checkpoint and config is None:
             config = checkpoint['config']
@@ -671,15 +671,15 @@ def create_vits_model_from_checkpoint(
         state_dict = checkpoint
         config = config or {}
 
-    # 创建模型
+    # CreateModel
     model = SimpleVITSModel(config)
 
-    # 尝试加载权重
+    # Try to load weights
     if state_dict:
         try:
             model.load_state_dict(state_dict, strict=False)
         except Exception:
-            # 部分加载失败，使用默认权重
+            # Partial load failed, use default weights
             pass
 
     return model

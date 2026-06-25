@@ -1,6 +1,6 @@
 """
-Base Effect - 音效处理器基类
-定义所有音效处理的通用接口
+Base Effect - Audio effects processor base class
+Defines common interface for all audio effects
 """
 
 from abc import ABC, abstractmethod
@@ -11,14 +11,14 @@ import numpy as np
 
 @dataclass
 class EffectResult:
-    """音效处理结果"""
-    audio: np.ndarray                    # 处理后的音频
-    sample_rate: int = 44100             # 采样率
-    parameters_used: Optional[dict] = None  # 使用的参数
-    metadata: Optional[dict] = None     # 元数据
+    """Audio effects result"""
+    audio: np.ndarray                    # Processed audio
+    sample_rate: int = 44100             # Sample rate
+    parameters_used: Optional[dict] = None  # UsesParameter
+    metadata: Optional[dict] = None     # Metadata
     
     def to_dict(self) -> dict:
-        """转换为字典格式"""
+        """Convert to dictionary format"""
         return {
             "audio_shape": self.audio.shape if self.audio is not None else None,
             "sample_rate": self.sample_rate,
@@ -29,18 +29,18 @@ class EffectResult:
 
 class BaseEffect(ABC):
     """
-    音效处理器基类
+    Audio effects processor base class
     
-    所有音效处理器都应继承此类并实现 process 方法。
-    支持音频数组的直接处理和文件处理。
+    All audio effects processors should inherit this class and implement process method.
+    Supports direct audio array processing and file processing.
     """
     
     def __init__(self, sample_rate: int = 44100):
         """
-        初始化音效处理器
+        Initialize audio effects processor
         
         Args:
-            sample_rate: 采样率
+            sample_rate: Sample rate
         """
         self.sample_rate = sample_rate
     
@@ -52,41 +52,41 @@ class BaseEffect(ABC):
         **kwargs
     ) -> EffectResult:
         """
-        处理音频
+        ProcessAudio
         
         Args:
-            audio: 输入音频数据
-            sample_rate: 采样率
-            **kwargs: 效果特定参数
+            audio: Input audio data
+            sample_rate: Sample rate
+            **kwargs: Effect specific parameters
             
         Returns:
-            EffectResult: 处理结果
+            EffectResult: Processing result
         """
         pass
     
     @abstractmethod
     def get_effect_name(self) -> str:
-        """获取效果名称"""
+        """GetEffectName"""
         pass
     
     @abstractmethod
     def get_parameters(self) -> dict:
-        """获取效果参数"""
+        """GetEffectParameter"""
         pass
     
     def validate_audio(self, audio: np.ndarray) -> np.ndarray:
         """
-        验证音频输入
+        Validate audio input
         
         Args:
-            audio: 输入音频
+            audio: Input audio
             
         Returns:
-            验证后的音频数组
+            Validated audio array
         """
         audio = np.array(audio, dtype=np.float32)
         
-        # 处理单声道
+        # Process mono
         if audio.ndim == 1:
             audio = audio[np.newaxis, :]
         elif audio.ndim == 2:
@@ -103,16 +103,16 @@ class BaseEffect(ABC):
         **kwargs
     ) -> EffectResult:
         """
-        应用效果，支持旁路模式
+        Apply effect, supports bypass mode
         
         Args:
-            audio: 输入音频
-            sample_rate: 采样率
-            bypass: 是否旁路
-            **kwargs: 其他参数
+            audio: Input audio
+            sample_rate: Sample rate
+            bypass: Whether bypassed
+            **kwargs: OtherParameter
             
         Returns:
-            EffectResult: 处理结果
+            EffectResult: Processing result
         """
         if bypass:
             return EffectResult(
@@ -129,7 +129,7 @@ class BaseEffect(ABC):
         sample_rate: int,
         **kwargs
     ) -> EffectResult:
-        """创建标准结果对象"""
+        """Create standard result object"""
         return EffectResult(
             audio=audio,
             sample_rate=sample_rate,

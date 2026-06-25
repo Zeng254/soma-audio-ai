@@ -12,67 +12,67 @@ MAX_FILE_SIZE = 100 * 1024 * 1024
 
 class File(BaseModel):
     """
-    通用文件对象，支持自动类型推断和路径管理
+    Generic file object, supports automatic type inference and path management
     """
-    url: str = Field(..., description="文件URL(http/https)或本地路径")
+    url: str = Field(..., description="FileURL(http/https)or local path")
     file_type: Literal['image', 'video', 'audio', 'document', 'default'] = Field(
         default="default",
-        description="文件类型"
+        description="File type"
     )
     _local_path: Optional[str] = PrivateAttr(default=None)
     model_config = ConfigDict(
         json_schema_extra={
-            "x-component": "file-upload",  # 前端用文件上传组件
+            "x-component": "file-upload",  # Frontend file upload component
         }
     )
 
     def set_cache_path(self, path: str):
-        """设置缓存路径"""
+        """Set cache path"""
         self._local_path = path
 
     def get_cache_path(self) -> Optional[str]:
-        """获取缓存路径（如果文件实际存在）"""
+        """Get cache path (if file actually exists)"""
         return self._local_path
 
     @property
     def is_remote(self) -> bool:
-        """判断是网络URL还是本地文件"""
+        """Check if network URL or local file"""
         return self.url.startswith(('http://', 'https://'))
 
 def infer_file_category(path_or_url: str) -> tuple[str, str]:
     """
-    根据路径或URL后缀判断文件类型
-    逻辑：
-    1. 解析 URL 去除 query 参数 (?id=...)，提取 path
-    2. 获取 path 最后一部分的文件名和后缀
-    3. 查表判断，匹配不到则返回 'default'
+    Check file type based on path or URL suffix
+    Logic:
+    1. Parse URL to remove query parameters (?id=...), extract path
+    2. Get last part of path as filename and suffix
+    3. Lookup check, returns 'default' if no match
 
     Return:
-        - 分类:image, video, audio, document, default
-        - 后缀:.pdf
+        - Classification: image, video, audio, document, default
+        - Suffix: .pdf
 
     """
 
-    # === 步骤 1 & 2: 提取纯净的后缀名 ===
-    # urlparse 可以同时处理本地路径 (会被视为 path) 和 网络 URL
+    # === Step 1 & 2: Extract pure suffix ===
+    # urlparse can simultaneously process local path (treated as path) and network URL
     parsed = urlparse(path_or_url)
-    path = parsed.path  # 提取路径部分，忽略 http://... 和 ?query=...
+    path = parsed.path  # Extract path part, ignore http://... and ?query=...
 
-    # 获取文件名 (例如 /a/b/test.jpg -> test.jpg)
+    # Get filename (e.g. /a/b/test.jpg -> test.jpg)
     filename = os.path.basename(path)
 
-    # 分离后缀 (test.jpg -> .jpg)
+    # Separate suffix (test.jpg -> .jpg)
     _, ext_with_dot = os.path.splitext(filename)
 
-    # 如果没有后缀，直接兜底
+    # If no suffix, fallback directly
     if not ext_with_dot:
         return 'default', ""
 
-    # 去除点并转小写 (例如 .JPG -> jpg)
+    # Remove dot and convert to lowercase (e.g. .JPG -> jpg)
     ext = ext_with_dot.lstrip('.').lower()
 
-    # === 步骤 3: 查表匹配 ===
-    # 定义常见映射表
+    # === Step 3: Lookup match ===
+    # Define common mapping table
     TYPE_MAPPING = {
         'image': {
             'apng', 'avif', 'bmp', 'gif', 'heic', 'ico', 'jpg', 'jpeg', 'png', 'svg', 'tiff', 'webp'
@@ -101,48 +101,48 @@ class FileOps:
     @staticmethod
     def _get_bytes_stream(file_obj:File) -> tuple[bytes, str]:
         """
-        获取文件内容和后缀, 大小限制检查, 超出抛异常
+        Get file content and suffix, size limit check, raise exception if exceeded
         """
         _, ext = infer_file_category(file_obj.url)
 
         if file_obj.is_remote:
             try:
-                # stream=True: 此时只下载 Headers，连接保持打开，还没下载 Body
+                # stream=True: At this point only download headers, connection stays open, body not yet downloaded
                 with requests.get(file_obj.url, stream=True, timeout=60) as resp:
                     resp.raise_for_status()
 
                     content_length = resp.headers.get('Content-Length')
                     if content_length and int(content_length) > MAX_FILE_SIZE:
                         raise Exception(
-                            f"文件大小 ({int(content_length)} bytes) 超过限制 100MB，已终止下载。"
+                            f"File size ({int(content_length)} bytes) exceeds limit 100MB, download terminated."
                         )
 
-                    # 场景：Header 缺失 Content-Length 或服务器 Header 欺骗
+                    # Scenario: Header missing Content-Length or server header spoofing
                     downloaded_content = BytesIO()
                     current_size = 0
 
-                    # 分块读取，每块 8KB
+                    # Read in chunks, 8KB each
                     for chunk in resp.iter_content(chunk_size=8192):
                         if chunk:
                             current_size += len(chunk)
                             if current_size > MAX_FILE_SIZE:
-                                raise Exception(f"检测到文件超过 100MB，已中断。")
+                                raise Exception(f"Detected file exceeds 100MB, download interrupted.")
                             downloaded_content.write(chunk)
 
-                    # 获取完整 bytes
+                    # Get complete bytes
                     return downloaded_content.getvalue(), ext
 
             except requests.RequestException as e:
-                raise RuntimeError(f"网络请求失败: {e}")
+                raise RuntimeError(f"Network request failed: {e}")
 
         else:
             if not os.path.exists(file_obj.url):
-                raise FileNotFoundError(f"本地文件不存在: {file_obj.url}")
+                raise FileNotFoundError(f"Local file does not exist: {file_obj.url}")
 
             '''
             file_size = os.path.getsize(file_obj.url)
             if file_size > MAX_FILE_SIZE:
-                 raise Exception(f"本地文件大小 ({file_size} bytes) 超过限制 100MB")
+                 raise Exception(f"Local file size ({file_size} bytes) exceeds limit 100MB")
             '''
 
             with open(file_obj.url, 'rb') as f:
@@ -151,8 +151,8 @@ class FileOps:
     @staticmethod
     def save_to_local(file_obj: File, filename: str) -> str:
         """
-        将当前文件对象的内容保存到本地路径, 返回本地路径
-        如果是本地路径，直接返回
+        Save current file object content to local path, return local path
+        If local path, return directly
         """
         if not file_obj.is_remote:
             if os.path.exists(file_obj.url):
@@ -163,7 +163,7 @@ class FileOps:
         try:
             os.makedirs(FileOps.DOWNLOAD_DIR, exist_ok=True)
 
-            # 简单的文件名生成策略 (真实场景建议用 url hash 避免重复下载)
+            # Simple filename generation strategy (real scene recommends using url hash to avoid repeated downloads)
             # ext = os.path.splitext(file_obj.url.split('?')[0])[1] or ".tmp"
             # filename = f"{uuid.uuid4().hex}{ext}"
             local_path = os.path.join(FileOps.DOWNLOAD_DIR, filename)
@@ -182,8 +182,8 @@ class FileOps:
     @staticmethod
     def read_bytes(file_obj:File) -> bytes:
         """
-        获取文件的原始二进制数据
-        场景：上传到OSS、保存到本地、传给图像处理库
+        Get file raw binary data
+        Scene: Upload to OSS, save locally, pass to image processing library
         """
         content, _ = FileOps._get_bytes_stream(file_obj)
         return content
@@ -191,8 +191,8 @@ class FileOps:
     @staticmethod
     def extract_text(file_obj: File) -> str:
         """
-        提取文本内容
-        场景：RAG、HTML解析、文档分析
+        ExtractionTextContent
+        Scene: RAG, HTML parsing, document analysis
         """
         try:
             content, ext = FileOps._get_bytes_stream(file_obj)
@@ -200,7 +200,7 @@ class FileOps:
             if ext in ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']:
                 return FileOps._parse_document_bytes(file_obj, content, ext)
 
-            # 默认直接读
+            # Default direct read
             charset = chardet.detect(content)
             if 'encoding' in charset:
                 return content.decode(charset['encoding'])
@@ -233,52 +233,52 @@ class FileOps:
             elif ext in ['.ppt', '.pptx']:
                 text_result = read_ppt(stream)
             else:
-                text_result = f"[暂不支持解析该文档格式: {ext}]"
+                text_result = f"[Document format not supported for parsing: {ext}]"
         except ImportError as e:
-            text_result = f"[解析库缺失] {e}"
+            text_result = f"[Parsing library missing] {e}"
         except Exception as e:
-            text_result = f"[解析失败] {e}"
+            text_result = f"[ParseFail] {e}"
 
         return text_result
 
 def read_docx(cont_stream) -> str:
     """
-    使用docx2python按顺序读取内容
+    Use docx2python to read content in order
     """
     from docx2python import docx2python
     doc_result = docx2python(cont_stream)
 
-    # 获取文档结构
+    # Get document structure
     all_parts = []
 
-    # docx2python以嵌套列表形式返回内容
-    # 遍历文档主体
+    # docx2python returns content as nested list
+    # Iterate document body
     for section in doc_result.body:
         if isinstance(section, list):
             for item in section:
                 if isinstance(item, list):
-                    # 可能是表格或多级内容
+                    # May be table or multi-level content
                     for sub_item in item:
                         if isinstance(sub_item, str) and sub_item.strip():
                             all_parts.append(sub_item.strip())
                         elif isinstance(sub_item, list):
-                            # 表格行
+                            # Table row
                             row_text = "\n".join([str(cell).strip() for cell in sub_item if str(cell).strip()])
                             if row_text:
                                 all_parts.append(row_text)
                 elif isinstance(item, str) and item.strip():
                     all_parts.append(item.strip())
 
-    # 关闭文档
+    # Close document
     doc_result.close()
 
     return "\n\n".join(all_parts)
 
 def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
     if not Presentation:
-        return "[Error] 未安装 python-pptx 库，无法解析 PPT 文件"
+        return "[Error] python-pptx library not installed, cannot parse PPT file"
 
-    # 1. 统一转换为文件流对象 (BytesIO)
+    # 1. Uniformly convert to file stream object (BytesIO)
     if isinstance(file_input, str):
         with open(file_input, 'rb') as f:
             ppt_stream = BytesIO(f.read())
@@ -293,15 +293,15 @@ def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
 
         for i, slide in enumerate(prs.slides):
             page_content = []
-            page_content.append(f"=== 第 {i+1} 页 ===")
+            page_content.append(f"=== Page {i+1} ===")
 
-            # shape.text_frame 包含了形状内的文本段落
+            # shape.text_frame contains text paragraphs within shape
             for shape in slide.shapes:
-                # 提取普通文本框
+                # Extract normal text boxes
                 if hasattr(shape, "text") and shape.text.strip():
                     page_content.append(shape.text.strip())
 
-                # B. 提取表格内容 (普通 shape.text 无法获取表格内的字)
+                # B. Extract table content (normal shape.text cannot get text inside tables)
                 if shape.has_table:
                     table_texts = []
                     for row in shape.table.rows:
@@ -309,35 +309,35 @@ def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
                         if row_cells:
                             table_texts.append(" | ".join(row_cells))
                     if table_texts:
-                        page_content.append("[表格]\n" + "\n".join(table_texts))
+                        page_content.append("[Table]\n" + "\n".join(table_texts))
 
-            # 很多重要信息藏在备注里
+            # Many important info hidden in notes
             if slide.has_notes_slide:
                 notes = slide.notes_slide.notes_text_frame.text
                 if notes.strip():
-                    page_content.append(f"[备注]: {notes.strip()}")
+                    page_content.append(f"[Notes]: {notes.strip()}")
 
             full_text.append("\n".join(page_content))
 
         return "\n\n".join(full_text)
 
     except Exception as e:
-        return f"[PPT解析失败] {str(e)}"
+        return f"[PPTParseFail] {str(e)}"
 
 
 # ============================================================
-# 便捷函数
+# Convenience function
 # ============================================================
 
 def get_extension(path: str) -> str:
     """
-    获取文件扩展名（包括点号）
+    Get file extension (including dot)
     
     Args:
-        path: 文件路径
+        path: File path
         
     Returns:
-        扩展名（包含点号），如 '.wav'
+        Extension (including dot), e.g. '.wav'
     """
     import os
     return os.path.splitext(path)[1].lower()
@@ -345,24 +345,24 @@ def get_extension(path: str) -> str:
 
 def safe_filename(filename: str) -> str:
     """
-    生成安全的文件名（去除危险字符）
+    Generate secure filename (remove dangerous characters)
     
     Args:
-        filename: 原始文件名
+        filename: Original filename
         
     Returns:
-        安全的文件名
+        Secure filename
     """
     import re
-    # 移除或替换危险字符
+    # Remove or replace dangerous characters
     safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', filename)
-    # 移除开头和结尾的空格和点
+    # Remove leading and trailing spaces and dots
     safe = safe.strip('. ')
-    # 限制长度
+    # Limit length
     if len(safe) > 200:
         name, ext = os.path.splitext(safe)
         safe = name[:200-len(ext)] + ext
-    # 确保不为空
+    # Ensure not empty
     if not safe:
         safe = "unnamed"
     return safe

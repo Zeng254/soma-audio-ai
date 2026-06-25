@@ -1,6 +1,6 @@
 """
-Audio Pipeline - 音频处理流水线
-支持链式调用多个处理节点
+Audio Pipeline - Audio processing pipeline
+Supports chaining multiple processing nodes
 """
 
 from dataclasses import dataclass, field
@@ -13,8 +13,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class NodeType(Enum):
-    """节点类型"""
+class Node types(Enum):
+    """Node types"""
     SEPARATOR = "separator"
     EFFECT = "effect"
     CONVERTER = "converter"
@@ -23,26 +23,26 @@ class NodeType(Enum):
 
 
 @dataclass
-class PipelineNode:
+class Pipeline node:
     """
-    流水线节点
+    Pipeline node
     
-    代表流水线中的一个处理步骤
+    Represents a processing step in the pipeline
     """
-    name: str                                    # 节点名称
-    node_type: NodeType                          # 节点类型
-    process_fn: Callable[[np.ndarray, int], tuple]  # 处理函数
-    params: Dict[str, Any] = field(default_factory=dict)  # 处理参数
-    enabled: bool = True                         # 是否启用
-    bypass: bool = False                         # 是否旁路
+    name: str                                    # NodeName
+    node_type: Node types                          # Node types
+    process_fn: Callable[[np.ndarray, int], tuple]  # ProcessFunction
+    params: Dict[str, Any] = field(default_factory=dict)  # ProcessParameter
+    enabled: bool = True                         # Whether enabled
+    bypass: bool = False                         # Whether bypassed
     
     def execute(self, audio: np.ndarray, sample_rate: int) -> tuple:
         """
-        执行节点处理
+        ExecuteNodeProcess
         
         Args:
-            audio: 输入音频
-            sample_rate: 采样率
+            audio: Input audio
+            sample_rate: Sample rate
             
         Returns:
             (output_audio, sample_rate)
@@ -55,7 +55,7 @@ class PipelineNode:
 
 @dataclass
 class PipelineResult:
-    """流水线执行结果"""
+    """Pipeline execution result"""
     audio: np.ndarray
     sample_rate: int
     duration: float
@@ -66,12 +66,12 @@ class PipelineResult:
 
 class AudioPipeline:
     """
-    音频处理流水线
+    Audio processing pipeline
     
-    支持链式调用多个音频处理节点，
-    每个节点可以是分离器、效果器、转换器等。
+    Supports chaining multiple audio processing nodes,
+    Each node can be a separator, effect processor, converter, etc.
     
-    示例:
+    Example:
         pipeline = AudioPipeline(sample_rate=44100)
         pipeline.add_separator("demucs", DemucsSeparator())
         pipeline.add_effect("eq", Equalizer(), preset="pop")
@@ -81,39 +81,39 @@ class AudioPipeline:
     
     def __init__(self, name: str = "pipeline", sample_rate: int = 44100):
         """
-        初始化流水线
+        Initialize pipeline
         
         Args:
-            name: 流水线名称
-            sample_rate: 默认采样率
+            name: Pipeline name
+            sample_rate: Default sample rate
         """
         self.name = name
         self.default_sample_rate = sample_rate
-        self.nodes: List[PipelineNode] = []
+        self.nodes: List[Pipeline node] = []
         self._node_times: Dict[str, float] = {}
     
     def add_node(
         self,
         name: str,
-        node_type: NodeType,
+        node_type: Node types,
         process_fn: Callable,
         params: Optional[Dict] = None,
         enabled: bool = True,
     ) -> "AudioPipeline":
         """
-        添加处理节点
+        AddProcessNode
         
         Args:
-            name: 节点名称
-            node_type: 节点类型
-            process_fn: 处理函数
-            params: 处理参数
-            enabled: 是否启用
+            name: NodeName
+            node_type: Node types
+            process_fn: ProcessFunction
+            params: ProcessParameter
+            enabled: Whether enabled
             
         Returns:
             self
         """
-        node = PipelineNode(
+        node = Pipeline node(
             name=name,
             node_type=node_type,
             process_fn=process_fn,
@@ -130,12 +130,12 @@ class AudioPipeline:
         **params
     ) -> "AudioPipeline":
         """
-        添加分离器节点
+        AddSeparatorNode
         
         Args:
-            name: 节点名称
-            separator: 分离器实例
-            **params: 分离参数
+            name: NodeName
+            separator: SeparatorInstance
+            **params: SeparationParameter
             
         Returns:
             self
@@ -146,7 +146,7 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=NodeType.SEPARATOR,
+            node_type=Node types.SEPARATOR,
             process_fn=process,
             params=params,
         )
@@ -158,12 +158,12 @@ class AudioPipeline:
         **params
     ) -> "AudioPipeline":
         """
-        添加效果器节点
+        Add effect processor node
         
         Args:
-            name: 节点名称
-            effect: 效果器实例
-            **params: 效果参数
+            name: NodeName
+            effect: Effect processor instance
+            **params: EffectParameter
             
         Returns:
             self
@@ -174,7 +174,7 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=NodeType.EFFECT,
+            node_type=Node types.EFFECT,
             process_fn=process,
             params=params,
         )
@@ -186,12 +186,12 @@ class AudioPipeline:
         params: Optional[dict] = None,
     ) -> "AudioPipeline":
         """
-        添加自定义过滤器节点
+        Add custom filter node
         
         Args:
-            name: 节点名称
-            filter_fn: 过滤函数
-            params: 过滤参数
+            name: NodeName
+            filter_fn: FilterFunction
+            params: FilterParameter
             
         Returns:
             self
@@ -201,7 +201,7 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=NodeType.FILTER,
+            node_type=Node types.FILTER,
             process_fn=process,
             params=params,
         )
@@ -213,12 +213,12 @@ class AudioPipeline:
         params: Optional[dict] = None,
     ) -> "AudioPipeline":
         """
-        添加自定义处理节点
+        Add custom processing node
         
         Args:
-            name: 节点名称
-            process_fn: 处理函数 (audio, sample_rate) -> (output, sample_rate)
-            params: 处理参数
+            name: NodeName
+            process_fn: ProcessFunction (audio, sample_rate) -> (output, sample_rate)
+            params: ProcessParameter
             
         Returns:
             self
@@ -228,38 +228,38 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=NodeType.CUSTOM,
+            node_type=Node types.CUSTOM,
             process_fn=wrapped_process,
             params=params,
         )
     
     def remove_node(self, name: str) -> bool:
-        """移除节点"""
+        """RemoveNode"""
         for i, node in enumerate(self.nodes):
             if node.name == name:
                 self.nodes.pop(i)
                 return True
         return False
     
-    def get_node(self, name: str) -> Optional[PipelineNode]:
-        """获取节点"""
+    def get_node(self, name: str) -> Optional[Pipeline node]:
+        """GetNode"""
         for node in self.nodes:
             if node.name == name:
                 return node
         return None
     
     def set_bypass(self, name: str, bypass: bool = True):
-        """设置节点旁路"""
+        """Set node bypass"""
         node = self.get_node(name)
         if node:
             node.bypass = bypass
     
     def reorder_nodes(self, names: List[str]):
         """
-        重新排序节点
+        Re-sort nodes
         
         Args:
-            names: 新的节点名称顺序
+            names: New node name order
         """
         name_to_node = {node.name: node for node in self.nodes}
         self.nodes = [name_to_node[name] for name in names if name in name_to_node]
@@ -271,15 +271,15 @@ class AudioPipeline:
         return_tracks: bool = False,
     ) -> PipelineResult:
         """
-        执行流水线
+        Execute pipeline
         
         Args:
-            audio: 输入音频
-            sample_rate: 采样率
-            return_tracks: 是否返回所有音轨
+            audio: Input audio
+            sample_rate: Sample rate
+            return_tracks: Whether to return all tracks
             
         Returns:
-            PipelineResult: 执行结果
+            PipelineResult: Execution result
         """
         if sample_rate is None:
             sample_rate = self.default_sample_rate
@@ -290,7 +290,7 @@ class AudioPipeline:
         nodes_executed = []
         node_times = {}
         
-        # 记录分离结果
+        # Record separation result
         separation_results = {}
         
         for node in self.nodes:
@@ -300,8 +300,8 @@ class AudioPipeline:
             node_start = time.time()
             
             try:
-                if node.node_type == NodeType.SEPARATOR and return_tracks:
-                    # 分离器节点，保存所有音轨
+                if node.node_type == Node types.SEPARATOR and return_tracks:
+                    # Separator node, save all tracks
                     result_audio, result_sr = node.execute(current_audio, current_sr)
                     separation_results[node.name] = result_audio
                 else:
@@ -332,15 +332,15 @@ class AudioPipeline:
         sample_rate: Optional[int] = None,
     ) -> bool:
         """
-        处理音频文件
+        ProcessAudioFile
         
         Args:
-            input_path: 输入文件
-            output_path: 输出文件
-            sample_rate: 采样率
+            input_path: Input file
+            output_path: Output file
+            sample_rate: Sample rate
             
         Returns:
-            bool: 是否成功
+            bool: Whether successful
         """
         from src.utils.audio_io import AudioLoader, AudioSaver
         
@@ -356,19 +356,19 @@ class AudioPipeline:
         return saver.save(result.audio, output_path, sr)
     
     def clear(self):
-        """清空所有节点"""
+        """Clear all nodes"""
         self.nodes.clear()
         self._node_times.clear()
     
     def __len__(self) -> int:
-        """节点数量"""
+        """NodeCount"""
         return len(self.nodes)
     
     def __repr__(self) -> str:
         return f"AudioPipeline(name={self.name}, nodes={len(self.nodes)})"
     
     def summary(self) -> str:
-        """生成流水线摘要"""
+        """Generate pipeline summary"""
         lines = [f"Pipeline: {self.name}", f"Sample Rate: {self.default_sample_rate}Hz", "", "Nodes:"]
         
         for i, node in enumerate(self.nodes, 1):
@@ -381,34 +381,34 @@ class AudioPipeline:
 
 class PipelineBuilder:
     """
-    流水线构建器
+    Pipeline builder
     
-    提供流畅的 API 来构建流水线
+    Provides fluent API to build pipeline
     """
     
     def __init__(self, name: str = "pipeline", sample_rate: int = 44100):
         self.pipeline = AudioPipeline(name=name, sample_rate=sample_rate)
     
     def with_separator(self, name: str, separator: Any, **params) -> "PipelineBuilder":
-        """添加分离器"""
+        """AddSeparator"""
         self.pipeline.add_separator(name, separator, **params)
         return self
     
     def with_effect(self, name: str, effect: Any, **params) -> "PipelineBuilder":
-        """添加效果器"""
+        """Add effect processor"""
         self.pipeline.add_effect(name, effect, **params)
         return self
     
     def with_filter(self, name: str, filter_fn: Callable, params: Optional[dict] = None) -> "PipelineBuilder":
-        """添加过滤器"""
+        """Add filter processor"""
         self.pipeline.add_filter(name, filter_fn, params)
         return self
     
     def with_custom(self, name: str, process_fn: Callable, params: Optional[dict] = None) -> "PipelineBuilder":
-        """添加自定义节点"""
+        """Add custom node"""
         self.pipeline.add_custom(name, process_fn, params)
         return self
     
     def build(self) -> AudioPipeline:
-        """构建流水线"""
+        """Build pipeline"""
         return self.pipeline

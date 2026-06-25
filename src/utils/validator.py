@@ -1,6 +1,6 @@
 """
-Validator - 参数校验工具
-提供音频处理相关参数的验证
+Validator - Parameter validation tools
+Provides audio processing parameter validation
 """
 
 from typing import Any, List, Optional, Tuple, Union
@@ -11,27 +11,27 @@ from src.exceptions import SOMAError
 
 
 class ValidationError(SOMAError):
-    """验证错误"""
+    """Validation error"""
     pass
 
 
 class AudioValidator:
     """
-    音频参数验证器
+    Audio parameter validator
     
-    验证音频处理相关的输入参数
+    Validate audio processing input parameters
     """
     
-    # 支持的采样率
+    # SupportsSample rate
     VALID_SAMPLE_RATES = {
         8000, 11025, 16000, 22050, 32000, 
         44100, 48000, 88200, 96000, 176400, 192000
     }
     
-    # 支持的声道数
+    # Supports channel count
     VALID_CHANNELS = {1, 2, 6, 8}  # mono, stereo, 5.1, 7.1
     
-    # 支持的音频格式
+    # Supported audio formats
     VALID_FORMATS = {
         "wav", "mp3", "flac", "ogg", "aac", 
         "m4a", "wma", "aiff", "amr", "opus"
@@ -40,17 +40,17 @@ class AudioValidator:
     @classmethod
     def validate_audio_path(cls, path: str, must_exist: bool = True) -> Path:
         """
-        验证音频文件路径
+        ValidateAudioFile path
         
         Args:
-            path: 文件路径
-            must_exist: 是否必须存在
+            path: File path
+            must_exist: Whether must exist
             
         Returns:
-            Path 对象
+            Path Object
             
         Raises:
-            ValidationError: 路径无效
+            ValidationError: Path invalid
         """
         if not path:
             raise ValidationError("File path cannot be empty")
@@ -63,7 +63,7 @@ class AudioValidator:
         if must_exist and not file_path.is_file():
             raise ValidationError(f"Path is not a file: {path}")
         
-        # 检查扩展名
+        # Check extension
         suffix = file_path.suffix[1:].lower()
         if suffix not in cls.VALID_FORMATS:
             raise ValidationError(
@@ -76,16 +76,16 @@ class AudioValidator:
     @classmethod
     def validate_sample_rate(cls, sample_rate: int) -> int:
         """
-        验证采样率
+        ValidateSample rate
         
         Args:
-            sample_rate: 采样率
+            sample_rate: Sample rate
             
         Returns:
-            验证后的采样率
+            Validated sample rate
             
         Raises:
-            ValidationError: 采样率无效
+            ValidationError: Sample rate invalid
         """
         if not isinstance(sample_rate, int):
             raise ValidationError(f"Sample rate must be integer, got {type(sample_rate)}")
@@ -94,7 +94,7 @@ class AudioValidator:
             raise ValidationError(f"Sample rate must be positive, got {sample_rate}")
         
         if sample_rate not in cls.VALID_SAMPLE_RATES:
-            # 警告但不抛出错误
+            # Warning but do not raise error
             print(f"Warning: Non-standard sample rate {sample_rate}Hz")
         
         return sample_rate
@@ -102,16 +102,16 @@ class AudioValidator:
     @classmethod
     def validate_channels(cls, channels: int) -> int:
         """
-        验证声道数
+        Validate channel count
         
         Args:
-            channels: 声道数
+            channels: Channel count
             
         Returns:
-            验证后的声道数
+            Validated channel count
             
         Raises:
-            ValidationError: 声道数无效
+            ValidationError: Channel count invalid
         """
         if not isinstance(channels, int):
             raise ValidationError(f"Channels must be integer, got {type(channels)}")
@@ -130,16 +130,16 @@ class AudioValidator:
     @classmethod
     def validate_audio_array(cls, audio: np.ndarray) -> np.ndarray:
         """
-        验证音频数组
+        ValidateAudioarray
         
         Args:
-            audio: 音频数据
+            audio: Audio data
             
         Returns:
-            验证后的音频数组
+            Validated audio array
             
         Raises:
-            ValidationError: 音频数据无效
+            ValidationError: Audio data invalid
         """
         if audio is None:
             raise ValidationError("Audio data cannot be None")
@@ -164,18 +164,18 @@ class AudioValidator:
     @classmethod
     def validate_frequency(cls, freq: float, min_freq: float = 0, max_freq: float = 20000) -> float:
         """
-        验证频率参数
+        ValidateFrequencyParameter
         
         Args:
-            freq: 频率值
-            min_freq: 最小频率
-            max_freq: 最大频率
+            freq: Frequency value
+            min_freq: MinimumFrequency
+            max_freq: MaximumFrequency
             
         Returns:
-            验证后的频率
+            Validated frequency
             
         Raises:
-            ValidationError: 频率无效
+            ValidationError: Frequency invalid
         """
         if not isinstance(freq, (int, float)):
             raise ValidationError(f"Frequency must be number, got {type(freq)}")
@@ -190,18 +190,18 @@ class AudioValidator:
     @classmethod
     def validate_gain(cls, gain: float, min_gain: float = -60, max_gain: float = 60) -> float:
         """
-        验证增益参数
+        ValidateGainParameter
         
         Args:
-            gain: 增益值(dB)
-            min_gain: 最小增益
-            max_gain: 最大增益
+            gain: Gain value (dB)
+            min_gain: MinimumGain
+            max_gain: MaximumGain
             
         Returns:
-            验证后的增益
+            Validated gain
             
         Raises:
-            ValidationError: 增益无效
+            ValidationError: Gain invalid
         """
         if not isinstance(gain, (int, float)):
             raise ValidationError(f"Gain must be number, got {type(gain)}")
@@ -216,22 +216,22 @@ class AudioValidator:
 
 class EffectParameterValidator:
     """
-    效果器参数验证器
+    Effect processor parameter validator
     """
     
     @classmethod
     def validate_eq_params(cls, params: dict) -> dict:
         """
-        验证均衡器参数
+        ValidateEqualizerParameter
         
         Args:
-            params: 参数字典
+            params: ParameterDictionary
             
         Returns:
-            验证后的参数
+            Validated parameters
             
         Raises:
-            ValidationError: 参数无效
+            ValidationError: Parameter invalid
         """
         if "bands" in params:
             bands = params["bands"]
@@ -258,27 +258,27 @@ class EffectParameterValidator:
     @classmethod
     def validate_reverb_params(cls, params: dict) -> dict:
         """
-        验证混响参数
+        ValidateReverb parameters
         
         Args:
-            params: 参数字典
+            params: ParameterDictionary
             
         Returns:
-            验证后的参数
+            Validated parameters
         """
-        # 验证 room_size
+        # Validate room_size
         if "room_size" in params:
             room_size = params["room_size"]
             if not 0.0 <= room_size <= 1.0:
                 raise ValidationError(f"room_size must be in [0, 1], got {room_size}")
         
-        # 验证 damping
+        # Validate damping
         if "damping" in params:
             damping = params["damping"]
             if not 0.0 <= damping <= 1.0:
                 raise ValidationError(f"damping must be in [0, 1], got {damping}")
         
-        # 验证 wet_level 和 dry_level
+        # Validate wet_level and dry_level
         for key in ["wet_level", "dry_level"]:
             if key in params:
                 level = params[key]
@@ -290,21 +290,21 @@ class EffectParameterValidator:
     @classmethod
     def validate_pitch_params(cls, params: dict) -> dict:
         """
-        验证音调参数
+        ValidatePitchParameter
         
         Args:
-            params: 参数字典
+            params: ParameterDictionary
             
         Returns:
-            验证后的参数
+            Validated parameters
         """
-        # 验证 semitones
+        # Validate semitones
         if "semitones" in params:
             semitones = params["semitones"]
             if not -24 <= semitones <= 24:
                 raise ValidationError(f"semitones must be in [-24, 24], got {semitones}")
         
-        # 验证 cents
+        # Validate cents
         if "cents" in params:
             cents = params["cents"]
             if not -100 <= cents <= 100:
@@ -315,22 +315,22 @@ class EffectParameterValidator:
 
 class PipelineValidator:
     """
-    流水线参数验证器
+    Pipeline parameter validator
     """
     
     @classmethod
     def validate_node_config(cls, config: dict) -> dict:
         """
-        验证节点配置
+        ValidateNodeConfiguration
         
         Args:
-            config: 节点配置
+            config: NodeConfiguration
             
         Returns:
-            验证后的配置
+            Validated configuration
             
         Raises:
-            ValidationError: 配置无效
+            ValidationError: Configuration invalid
         """
         required_fields = ["name", "type", "params"]
         
@@ -338,7 +338,7 @@ class PipelineValidator:
             if field not in config:
                 raise ValidationError(f"Missing required field: {field}")
         
-        # 验证节点类型
+        # ValidateNode types
         valid_types = {"separator", "effect", "converter", "filter", "custom"}
         if config["type"] not in valid_types:
             raise ValidationError(
@@ -349,22 +349,22 @@ class PipelineValidator:
         return config
 
 
-# ============== 便捷工具函数 ==============
+# ============== Convenience utility functions ==============
 
 def validate_pitch_shift(value: float, min_val: float = -24.0, max_val: float = 24.0) -> float:
     """
-    验证音高偏移值
+    Validate pitch shift value
     
     Args:
-        value: 半音偏移值
-        min_val: 最小值 (默认 -24)
-        max_val: 最大值 (默认 +24)
+        value: Semitone shift value
+        min_val: Minimum value (default -24)
+        max_val: Maximum value (default +24)
         
     Returns:
-        验证后的值
+        Validated value
         
     Raises:
-        ValidationError: 值超出范围
+        ValidationError: Value out of range
     """
     try:
         value = float(value)
@@ -379,18 +379,18 @@ def validate_pitch_shift(value: float, min_val: float = -24.0, max_val: float = 
 
 def validate_duration(value: float, min_val: float = 0.1, max_val: float = 3600.0) -> float:
     """
-    验证音频时长
+    Validate audio duration
     
     Args:
-        value: 时长（秒）
-        min_val: 最小值 (默认 0.1)
-        max_val: 最大值 (默认 3600)
+        value: Duration (seconds)
+        min_val: Minimum value (default 0.1)
+        max_val: Maximum value (default 3600)
         
     Returns:
-        验证后的值
+        Validated value
         
     Raises:
-        ValidationError: 值超出范围
+        ValidationError: Value out of range
     """
     try:
         value = float(value)
@@ -405,16 +405,16 @@ def validate_duration(value: float, min_val: float = 0.1, max_val: float = 3600.
 
 def validate_model_path(path: str) -> str:
     """
-    验证模型路径
+    ValidateModelPath
     
     Args:
-        path: 模型文件路径
+        path: ModelFile path
         
     Returns:
-        验证后的路径
+        Validated path
         
     Raises:
-        ValidationError: 路径无效
+        ValidationError: Path invalid
     """
     if not path:
         raise ValidationError("Model path cannot be empty")
@@ -422,7 +422,7 @@ def validate_model_path(path: str) -> str:
     if not isinstance(path, str):
         raise ValidationError(f"Model path must be string, got {type(path)}")
     
-    # 检查扩展名
+    # Check extension
     valid_extensions = ['.pth', '.pt', '.onnx', '.ckpt', '.safetensors']
     ext = os.path.splitext(path)[1].lower()
     if ext not in valid_extensions:
@@ -433,16 +433,16 @@ def validate_model_path(path: str) -> str:
 
 def validate_audio_format(value: str) -> str:
     """
-    验证音频格式
+    ValidateAudioFormat
     
     Args:
-        value: 音频格式字符串
+        value: AudioFormatString
         
     Returns:
-        验证后的格式
+        Validated format
         
     Raises:
-        ValidationError: 格式无效
+        ValidationError: Format invalid
     """
     if not value:
         raise ValidationError("Audio format cannot be empty")
@@ -458,18 +458,18 @@ def validate_audio_format(value: str) -> str:
 
 def validate_float(value: float, min_val: float = None, max_val: float = None) -> float:
     """
-    验证浮点数
+    ValidateFloat
     
     Args:
-        value: 值
-        min_val: 最小值 (可选)
-        max_val: 最大值 (可选)
+        value: Value
+        min_val: Minimum value (optional)
+        max_val: Maximum value (optional)
         
     Returns:
-        验证后的值
+        Validated value
         
     Raises:
-        ValidationError: 值无效或超出范围
+        ValidationError: Value invalid or out of range
     """
     try:
         value = float(value)
@@ -487,13 +487,13 @@ def validate_float(value: float, min_val: float = None, max_val: float = None) -
     @classmethod
     def validate_pipeline_config(cls, config: dict) -> dict:
         """
-        验证流水线配置
+        Validate pipeline configuration
         
         Args:
-            config: 流水线配置
+            config: Pipeline configuration
             
         Returns:
-            验证后的配置
+            Validated configuration
         """
         if "nodes" not in config:
             raise ValidationError("Pipeline config must contain 'nodes' field")
@@ -512,11 +512,11 @@ def validate_float(value: float, min_val: float = None, max_val: float = None) -
 
 def validate(value: Any, rules: dict) -> Tuple[bool, Optional[str]]:
     """
-    通用验证函数
+    Generic validation function
     
     Args:
-        value: 待验证的值
-        rules: 验证规则
+        value: Value to validate
+        rules: Validation rules
         
     Returns:
         (is_valid, error_message)
@@ -548,23 +548,23 @@ def validate(value: Any, rules: dict) -> Tuple[bool, Optional[str]]:
 
 
 # =============================================================================
-# 便捷独立函数 - 测试和外部调用使用
+# Convenience standalone function - for testing and external calls
 # =============================================================================
 
 def validate_sample_rate(sample_rate: Union[int, str]) -> int:
     """
-    验证采样率
+    ValidateSample rate
     
     Args:
-        sample_rate: 采样率值
+        sample_rate: Sample rate value
         
     Returns:
-        验证通过的采样率（整数）
+        Validated sample rate (integer)
         
     Raises:
-        ValidationError: 采样率无效
+        ValidationError: Sample rate invalid
     """
-    # 处理字符串输入
+    # Process string input
     if isinstance(sample_rate, str):
         try:
             sample_rate = int(sample_rate)
@@ -585,16 +585,16 @@ def validate_sample_rate(sample_rate: Union[int, str]) -> int:
 
 def validate_pitch_shift(semitones: int) -> int:
     """
-    验证音调偏移值
+    Validate pitch offset value
     
     Args:
-        semitones: 半音数偏移
+        semitones: semitone offset
         
     Returns:
-        验证通过的偏移值
+        Validate passed offset value
         
     Raises:
-        ValidationError: 偏移值超出范围
+        ValidationError: offset value out of range
     """
     if not isinstance(semitones, int):
         raise ValidationError(f"Pitch shift must be an integer, got {type(semitones).__name__}")
@@ -607,16 +607,16 @@ def validate_pitch_shift(semitones: int) -> int:
 
 def validate_duration(duration: float) -> float:
     """
-    验证音频时长
+    Validate audio duration
     
     Args:
-        duration: 时长（秒）
+        duration: duration (seconds)
         
     Returns:
-        验证通过的时长
+        Validate passed duration
         
     Raises:
-        ValidationError: 时长无效
+        ValidationError: duration invalid
     """
     if not isinstance(duration, (int, float)):
         raise ValidationError(f"Duration must be a number, got {type(duration).__name__}")
@@ -631,16 +631,16 @@ def validate_duration(duration: float) -> float:
 
 def validate_model_path(path: str) -> str:
     """
-    验证模型文件路径
+    ValidateModelFile path
     
     Args:
-        path: 模型文件路径
+        path: ModelFile path
         
     Returns:
-        验证通过的路径
+        Validate passed path
         
     Raises:
-        ValidationError: 路径无效或扩展名不支持
+        ValidationError: path invalid or extension not supported
     """
     SUPPORTED_EXTENSIONS = {'.pth', '.pt', '.onnx', '.pkl', '.joblib'}
     
@@ -661,16 +661,16 @@ def validate_model_path(path: str) -> str:
 
 def validate_audio_format(fmt: str) -> str:
     """
-    验证音频格式
+    ValidateAudioFormat
     
     Args:
-        fmt: 音频格式字符串
+        fmt: AudioFormatString
         
     Returns:
-        格式的大写形式
+        Format uppercase form
         
     Raises:
-        ValidationError: 格式不支持
+        ValidationError: format not supported
     """
     if not fmt or not isinstance(fmt, str):
         raise ValidationError("Audio format must be a non-empty string")
@@ -693,18 +693,18 @@ def validate_float(
     max_val: Optional[float] = None
 ) -> float:
     """
-    验证浮点数值
+    Validate float value
     
     Args:
-        value: 待验证的值
-        min_val: 最小值
-        max_val: 最大值
+        value: Value to validate
+        min_val: minimum value
+        max_val: maximum value
         
     Returns:
-        验证通过的浮点数值
+        Validate passed float value
         
     Raises:
-        ValidationError: 值无效或超出范围
+        ValidationError: Value invalid or out of range
     """
     if isinstance(value, str):
         try:

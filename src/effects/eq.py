@@ -1,6 +1,6 @@
 """
-Equalizer - 多频段均衡器
-支持自定义频段增益调整
+Equalizer - Multi-band equalizer
+Supports custom band gain adjustment
 """
 
 from typing import List, Optional, Tuple
@@ -12,20 +12,20 @@ from .base import BaseEffect, EffectResult
 
 class Equalizer(BaseEffect):
     """
-    多频段均衡器
+    Multi-band equalizer
     
-    支持任意数量的频段设置，每个频段包含：
-    - 中心频率 (Hz)
-    - 增益 (dB)
-    - 带宽 (Q值)
+    Supports any number of band settings, each band contains:
+    - Center frequency (Hz)
+    - Gain (dB)
+    - Bandwidth (Q value)
     
-    支持的滤波器类型:
-    - peak: 峰值/陷波滤波器
-    - lowshelf: 低架滤波器
-    - highshelf: 高架滤波器
-    - lowpass: 低通滤波器
-    - highpass: 高通滤波器
-    - bandpass: 带通滤波器
+    Supported filter types:
+    - peak: Peak/notch filter
+    - lowshelf: Low shelf filter
+    - highshelf: High shelf filter
+    - lowpass: Low pass filter
+    - highpass: High pass filter
+    - bandpass: Band pass filter
     """
     
     def __init__(
@@ -34,18 +34,18 @@ class Equalizer(BaseEffect):
         bands: Optional[List[dict]] = None,
     ):
         """
-        初始化均衡器
+        InitializeEqualizer
         
         Args:
-            sample_rate: 采样率
-            bands: 预设频段列表
-                 示例: [{"freq": 60, "gain": 3, "q": 1.4, "type": "peak"}, ...]
+            sample_rate: Sample rate
+            bands: Preset band list
+                 Example: [{"freq": 60, "gain": 3, "q": 1.4, "type": "peak"}, ...]
         """
         super().__init__(sample_rate)
         self.bands = bands or self._default_bands()
     
     def _default_bands(self) -> List[dict]:
-        """默认 10 段均衡器预设"""
+        """Default 10-band equalizer preset"""
         return [
             {"freq": 32, "gain": 0, "q": 1.4, "type": "lowshelf"},
             {"freq": 64, "gain": 0, "q": 1.4, "type": "peak"},
@@ -74,14 +74,14 @@ class Equalizer(BaseEffect):
         filter_type: str = "peak"
     ):
         """
-        设置单个频段
+        Set single band
         
         Args:
-            index: 频段索引
-            freq: 中心频率
-            gain: 增益(dB)
-            q: 带宽
-            filter_type: 滤波器类型
+            index: Band index
+            freq: Center frequency
+            gain: Gain(dB)
+            q: Bandwidth
+            filter_type: Filter class type
         """
         if 0 <= index < len(self.bands):
             self.bands[index] = {
@@ -93,10 +93,10 @@ class Equalizer(BaseEffect):
     
     def set_preset(self, name: str):
         """
-        应用预设
+        Apply preset
         
         Args:
-            name: 预设名称
+            name: Preset name
         """
         presets = {
             "flat": self._flat_preset(),
@@ -121,23 +121,23 @@ class Equalizer(BaseEffect):
         **kwargs
     ) -> EffectResult:
         """
-        应用均衡器
+        Apply equalizer
         
         Args:
-            audio: 输入音频
-            sample_rate: 采样率
-            **kwargs: 可选覆盖参数
+            audio: Input audio
+            sample_rate: Sample rate
+            **kwargs: Optional override parameters
             
         Returns:
-            EffectResult: 处理结果
+            EffectResult: Processing result
         """
         audio = self.validate_audio(audio)
         self.sample_rate = sample_rate
         
-        # 合并传入的频段设置
+        # Merge passed band settings
         bands = kwargs.get("bands", self.bands)
         
-        # 对每个通道应用均衡器
+        # Apply equalizer to each channel
         result = np.zeros_like(audio)
         
         for ch in range(audio.shape[0]):
@@ -149,16 +149,16 @@ class Equalizer(BaseEffect):
         return self._create_result(result, sample_rate, bands=bands)
     
     def _apply_band(self, audio: np.ndarray, band: dict) -> np.ndarray:
-        """应用单个频段"""
+        """Apply single band"""
         freq = band["freq"]
         gain = band["gain"]
         q = band["q"]
         filter_type = band["type"]
         
-        # 计算 b, a 系数
+        # Calculate b, a coefficients
         b, a = self._design_filter(freq, gain, q, filter_type)
         
-        # 应用滤波器
+        # Apply filter
         return signal.lfilter(b, a, audio)
     
     def _design_filter(
@@ -169,16 +169,16 @@ class Equalizer(BaseEffect):
         filter_type: str
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        设计 IIR 滤波器系数
+        Design IIR filter coefficients
         
         Args:
-            freq: 中心频率
-            gain: 增益(dB)
-            q: 品质因数
-            filter_type: 滤波器类型
+            freq: Center frequency
+            gain: Gain(dB)
+            q: Quality factor
+            filter_type: Filter class type
             
         Returns:
-            (b, a): 滤波器系数
+            (b, a): Filter coefficients
         """
         A = 10 ** (gain / 40)
         w0 = 2 * np.pi * freq / self.sample_rate
@@ -211,16 +211,16 @@ class Equalizer(BaseEffect):
             a2 = (A + 1) - (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
             
         else:
-            # 默认使用 peak 滤波器
+            # Default uses peak filter
             return self._design_filter(freq, gain, q, "peak")
         
-        # 归一化系数
+        # Normalization coefficients
         b = np.array([b0, b1, b2]) / a0
         a = np.array([1, a1/a0, a2/a0])
         
         return b, a
     
-    # 预设方法
+    # Preset method
     def _flat_preset(self) -> List[dict]:
         bands = self._default_bands()
         for band in bands:

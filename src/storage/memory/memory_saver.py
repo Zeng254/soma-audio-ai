@@ -10,13 +10,13 @@ import time
 
 logger = logging.getLogger(__name__)
 
-# 数据库连接超时时间（秒），每次尝试 15 秒，共尝试 2 次
+# Database connection timeout（seconds），Per attempt 15 seconds，Total attempts 2 times
 DB_CONNECTION_TIMEOUT = 15
 DB_MAX_RETRIES = 2
 
 
 class MemoryManager:
-    """Memory Manager 单例类"""
+    """Memory Manager Singleton class"""
 
     _instance: Optional['MemoryManager'] = None
     _checkpointer: Optional[Union[AsyncPostgresSaver, MemorySaver]] = None
@@ -29,7 +29,7 @@ class MemoryManager:
         return cls._instance
 
     def _connect_with_retry(self, db_url: str) -> Optional[psycopg.Connection]:
-        """带重试的数据库连接，每次 15 秒超时，共尝试 2 次"""
+        """Database connection with retry, every 15 seconds timeout, total attempts 2 times"""
         last_error = None
         for attempt in range(1, DB_MAX_RETRIES + 1):
             try:
@@ -41,12 +41,12 @@ class MemoryManager:
                 last_error = e
                 logger.warning(f"Database connection attempt {attempt} failed: {e}")
                 if attempt < DB_MAX_RETRIES:
-                    time.sleep(1)  # 重试前短暂等待
+                    time.sleep(1)  # Brief wait before retry
         logger.error(f"All {DB_MAX_RETRIES} database connection attempts failed, last error: {last_error}")
         return None
 
     def _setup_schema_and_tables(self, db_url: str) -> bool:
-        """同步创建 schema 和表（只执行一次），返回是否成功"""
+        """Synchronously create schema and tables (execute only once), returns success status"""
         if self._setup_done:
             return True
 
@@ -69,7 +69,7 @@ class MemoryManager:
             conn.close()
 
     def _get_db_url_safe(self) -> Optional[str]:
-        """安全获取 db_url，失败时返回 None"""
+        """Safely get db_url, returns None on failure"""
         try:
             from storage.database.db import get_db_url
             db_url = get_db_url()
@@ -82,32 +82,32 @@ class MemoryManager:
             return None
 
     def _create_fallback_checkpointer(self) -> MemorySaver:
-        """创建内存兜底 checkpointer"""
+        """CreateMemoryFallback checkpointer"""
         self._checkpointer = MemorySaver()
         logger.warning("Using MemorySaver as fallback checkpointer (data will not persist across restarts)")
         return self._checkpointer
 
     def get_checkpointer(self) -> BaseCheckpointSaver:
-        """获取 checkpointer，优先使用 PostgresSaver，失败时退化为 MemorySaver"""
+        """Get checkpointer, prefer PostgresSaver, fallback to MemorySaver on failure"""
         if self._checkpointer is not None:
             return self._checkpointer
 
-        # 1. 尝试获取 db_url
+        # 1. Try to get db_url
         db_url = self._get_db_url_safe()
         if not db_url:
             return self._create_fallback_checkpointer()
 
-        # 2. 尝试连接数据库并创建 schema/表（带重试）
+        # 2. Try to connect to database and create schema/tables (with retry)
         if not self._setup_schema_and_tables(db_url):
             return self._create_fallback_checkpointer()
 
-        # 3. 连接字符串加上 search_path
+        # 3. Add search_path to connection string
         if "?" in db_url:
             db_url = f"{db_url}&options=-csearch_path%3Dmemory"
         else:
             db_url = f"{db_url}?options=-csearch_path%3Dmemory"
 
-        # 4. 尝试创建连接池和 checkpointer
+        # 4. Try to create connection pool and checkpointer
         try:
             self._pool = AsyncConnectionPool(
                 conninfo=db_url,
@@ -128,7 +128,7 @@ _memory_manager: Optional[MemoryManager] = None
 
 
 def get_memory_saver() -> BaseCheckpointSaver:
-    """获取 checkpointer，优先使用 PostgresSaver，db_url 不可用或连接失败时退化为 MemorySaver"""
+    """Get checkpointer, prefer PostgresSaver, fallback to MemorySaver when db_url unavailable or connection fails"""
     global _memory_manager
     if _memory_manager is None:
         _memory_manager = MemoryManager()

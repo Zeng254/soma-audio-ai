@@ -1,7 +1,7 @@
 """
-SOMA Audio AI 统一异常体系
+SOMA Audio AI Unified Exception Hierarchy
 
-提供一致的异常层次结构，方便错误处理和调试。
+Provides consistent exception hierarchy for error handling and debugging.
 """
 
 from typing import Optional
@@ -9,9 +9,9 @@ from typing import Optional
 
 class SOMAError(Exception):
     """
-    SOMA 基础异常类
+    SOMA Base exception class
     
-    所有 SOMA 相关异常的基类。
+    Base class for all SOMA-related exceptions.
     """
 
     def __init__(self, message: str, details: Optional[dict] = None):
@@ -27,9 +27,9 @@ class SOMAError(Exception):
 
 class SOMADependencyError(SOMAError, ImportError):
     """
-    依赖缺失异常
+    Dependency missing exception
     
-    当必需的 Python 包未安装时抛出。
+    Raised when a required Python package is not installed.
     """
 
     def __init__(
@@ -49,9 +49,9 @@ class SOMADependencyError(SOMAError, ImportError):
 
 class SOMAModelError(SOMAError, ValueError):
     """
-    模型错误异常
+    Model error exception
     
-    当模型文件不存在、损坏或无法加载时抛出。
+    Raised when a model file does not exist, is corrupted, or cannot be loaded.
     """
 
     def __init__(
@@ -70,7 +70,7 @@ class SOMAModelError(SOMAError, ValueError):
 
 class SOMAModelNotFoundError(SOMAModelError):
     """
-    模型文件未找到异常
+    Model file not found exception
     """
 
     def __init__(self, model_path: str, search_paths: Optional[list] = None):
@@ -88,7 +88,7 @@ class SOMAModelNotFoundError(SOMAModelError):
 
 class SOMAModelCorruptedError(SOMAModelError):
     """
-    模型文件损坏异常
+    Model file corrupted exception
     """
 
     def __init__(self, model_path: str, details: Optional[str] = None):
@@ -101,9 +101,9 @@ class SOMAModelCorruptedError(SOMAModelError):
 
 class SOMAValidationError(SOMAError, ValueError):
     """
-    参数校验异常
+    Parameter validation exception
     
-    当输入参数无效时抛出。
+    Raised when an input parameter is invalid.
     """
 
     def __init__(
@@ -127,9 +127,9 @@ class SOMAValidationError(SOMAError, ValueError):
 
 class SOMAConversionError(SOMAError):
     """
-    转换失败异常
+    Conversion failure exception
     
-    当音频转换过程失败时抛出。
+    Raised when audio conversion process fails.
     """
 
     def __init__(
@@ -149,9 +149,9 @@ class SOMAConversionError(SOMAError):
 
 class SOMAAudioError(SOMAError):
     """
-    音频处理异常
+    Audio processing exception
     
-    当音频文件读取或处理失败时抛出。
+    Raised when audio file reading or processing fails.
     """
 
     def __init__(
@@ -170,9 +170,9 @@ class SOMAAudioError(SOMAError):
 
 class SOMARuntimeError(SOMAError, RuntimeError):
     """
-    运行时错误异常
+    Runtime error exception
     
-    当运行时状态异常时抛出。
+    Raised when runtime status is abnormal.
     """
 
     pass
@@ -180,9 +180,9 @@ class SOMARuntimeError(SOMAError, RuntimeError):
 
 class ConfigError(SOMAError, ValueError):
     """
-    配置错误异常
+    Configuration error exception
     
-    当配置参数无效或配置文件损坏时抛出。
+    Raised when configuration parameters are invalid or configuration file is corrupted.
     """
 
     def __init__(
@@ -203,280 +203,192 @@ class ConfigError(SOMAError, ValueError):
 
 class ConfigLoadError(ConfigError):
     """
-    配置加载错误异常
+    Configuration load error exception
     
-    当配置文件无法加载或解析时抛出。
+    Raised when configuration file cannot be loaded or parsed.
     """
 
-    def __init__(
-        self,
-        config_path: str,
-        reason: Optional[str] = None,
-    ):
-        self.config_path = config_path
-        self.reason = reason
-        msg = f"Failed to load config from '{config_path}'"
-        if reason:
-            msg = f"{msg}: {reason}"
-        super().__init__(msg, config_key=config_path, config_value=reason)
+    pass
 
 
 class ConfigValidationError(ConfigError):
     """
-    配置验证错误异常
+    Configuration validation error exception
     
-    当配置值验证失败时抛出。
+    Raised when configuration validation fails.
     """
 
-    def __init__(
-        self,
-        config_key: str,
-        value: any,
-        constraints: Optional[dict] = None,
-    ):
-        self.constraints = constraints or {}
-        msg = f"Config validation failed for '{config_key}': {value}"
-        if constraints:
-            msg = f"{msg} (expected: {constraints})"
-        super().__init__(msg, config_key=config_key, config_value=value)
-        self.details["constraints"] = self.constraints
+    pass
 
 
-class ConfigTypeError(ConfigError, TypeError):
+class ConfigTypeError(ConfigError):
     """
-    配置类型错误异常
+    Configuration type error exception
     
-    当配置值类型错误时抛出。
+    Raised when configuration type conversion fails.
     """
 
-    def __init__(
-        self,
-        config_key: str,
-        expected_type: type,
-        actual_type: type,
-    ):
-        self.expected_type = expected_type
-        self.actual_type = actual_type
-        msg = (
-            f"Config type error for '{config_key}': "
-            f"expected {expected_type.__name__}, got {actual_type.__name__}"
-        )
-        super().__init__(msg, config_key=config_key, config_value=actual_type.__name__)
-        self.details["expected_type"] = expected_type.__name__
-        self.details["actual_type"] = actual_type.__name__
+    pass
 
 
 class SecurityError(SOMAError):
     """
-    安全错误异常
+    Security error exception
     
-    当安全检查失败时抛出，如路径遍历、恶意文件等。
+    Raised when security validation fails.
     """
 
-    def __init__(
-        self,
-        message: str,
-        security_type: Optional[str] = None,
-        path: Optional[str] = None,
-    ):
-        self.security_type = security_type
-        self.path = path
-        details = {}
-        if security_type:
-            details["security_type"] = security_type
-        if path:
-            details["path"] = path
-        super().__init__(message, details)
+    pass
 
 
 class PathTraversalError(SecurityError):
     """
-    路径遍历攻击异常
+    Path traversal error exception
     
-    当检测到路径遍历攻击时抛出。
+    Raised when path traversal is detected.
     """
 
-    def __init__(
-        self,
-        attempted_path: str,
-        allowed_base: Optional[str] = None,
-    ):
-        self.attempted_path = attempted_path
-        self.allowed_base = allowed_base
-        msg = f"Path traversal attempt detected: '{attempted_path}'"
-        if allowed_base:
-            msg = f"{msg} (allowed base: '{allowed_base}')"
-        super().__init__(msg, security_type="path_traversal", path=attempted_path)
-        self.details["allowed_base"] = allowed_base
+    def __init__(self, message: str = "Path traversal attack detected",
+                 attempted_path: str = "", allowed_base: str = None, **kwargs):
+        details = {"attempted_path": attempted_path, "allowed_base": allowed_base}
+        super().__init__(message, details=details)
 
 
-class AudioValidationError(SOMAError, ValueError):
+class AudioValidationError(SOMAValidationError):
     """
-    音频验证错误异常
+    Audio validation error exception
     
-    当音频文件验证失败时抛出。
+    Raised when audio validation fails.
     """
 
-    def __init__(
-        self,
-        message: str,
-        file_path: Optional[str] = None,
-        validation_type: Optional[str] = None,
-    ):
-        self.validation_type = validation_type
-        super().__init__(
-            message,
-            {"file_path": file_path, "validation_type": validation_type},
-        )
+    pass
 
 
 class ModelSecurityError(SecurityError):
     """
-    模型安全错误异常
+    Model security error exception
     
-    当模型文件存在安全风险时抛出，如恶意代码、篡改等。
+    Raised when model security validation fails.
     """
 
-    def __init__(
-        self,
-        model_path: str,
-        security_issue: Optional[str] = None,
-    ):
-        self.security_issue = security_issue
-        msg = f"Security issue detected in model file: '{model_path}'"
-        if security_issue:
-            msg = f"{msg}: {security_issue}"
-        super().__init__(msg, security_type="model_security", path=model_path)
-        self.details["security_issue"] = security_issue
+    pass
 
 
-# 别名：ModelError (简化版)
-ModelError = SOMAModelError
+# ============================================================================
+# Additional Exception Aliases for Backward Compatibility
+# ============================================================================
 
-# 别名：ModelLoadError (简化版)
-ModelLoadError = SOMAModelNotFoundError
-
-# 别名：ModelNotFoundError (简化版)
-ModelNotFoundError = SOMAModelNotFoundError
-
-# 别名：AudioError (简化版)
-AudioError = SOMAAudioError
-
-# 别名：AudioLoadError (简化版)
-AudioLoadError = SOMAAudioError
-
-# 别名：AudioFormatError (简化版)
-AudioFormatError = SOMAAudioError
-
-# 别名：AudioProcessingError (简化版)
-AudioProcessingError = SOMAAudioError
-
-# 别名：SeparatorError (简化版)
-SeparatorError = SOMAConversionError
-
-# 别名：SeparationError (简化版)
-SeparationError = SOMAConversionError
-
-# 别名：VoiceConverterError (简化版)
-VoiceConverterError = SOMAConversionError
-
-# 别名：VoiceConversionError (简化版)
-VoiceConversionError = SOMAConversionError
+class ModelError(SOMAModelError):
+    """Alias for SOMAModelError for backward compatibility."""
+    pass
 
 
-# 辅助函数
-def is_soma_error(exc: Exception) -> bool:
-    """
-    检查异常是否为 SOMA 异常或其子类
+class ModelLoadError(SOMAModelError):
+    """Raised when model loading fails."""
+    pass
+
+
+class ModelNotFoundError(SOMAModelNotFoundError):
+    """Raised when model file is not found."""
+    pass
+
+
+class AudioError(SOMAAudioError):
+    """Alias for SOMAAudioError for backward compatibility."""
+    pass
+
+
+class AudioLoadError(SOMAAudioError):
+    """Raised when audio loading fails."""
+    pass
+
+
+class AudioFormatError(SOMAAudioError):
+    """Raised when audio format is invalid."""
+    pass
+
+
+class AudioProcessingError(SOMAAudioError):
+    """Raised when audio processing fails."""
+    pass
+
+
+class SeparatorError(SOMAError):
+    """Base exception for separator-related errors."""
+    pass
+
+
+class SeparationError(SeparatorError):
+    """Raised when audio separation fails."""
+    pass
+
+
+class VoiceConverterError(SOMAError):
+    """Base exception for voice converter-related errors."""
+    pass
+
+
+class VoiceConversionError(VoiceConverterError):
+    """Raised when voice conversion fails."""
+    pass
+
+
+# Timeout configuration constants
+TIMEOUT_MINUTES = 15  # minutes
+TIMEOUT_SECONDS = TIMEOUT_MINUTES * 60  # seconds
+
+# Task tracking
+RUNNING_TASKS = {}  # Tracks currently running tasks
+
+# Error classifier
+def classify_error(error: Exception) -> str:
+    """Classify error type for logging and handling."""
+    if isinstance(error, SOMADependencyError):
+        return "dependency"
+    elif isinstance(error, SOMAModelError):
+        return "model"
+    elif isinstance(error, SOMAValidationError):
+        return "validation"
+    elif isinstance(error, SOMAConversionError):
+        return "conversion"
+    elif isinstance(error, SOMAAudioError):
+        return "audio"
+    elif isinstance(error, ConfigError):
+        return "config"
+    else:
+        return "unknown"
+
+
+def is_soma_error(error: Exception) -> bool:
+    """Check if an error is a SOMA-related error."""
+    return isinstance(error, SOMAError)
+
+
+def get_error_category(error: Exception) -> str:
+    """Get the category of an error.
     
     Args:
-        exc: 异常对象
+        error: The error to categorize.
         
     Returns:
-        bool: 是否为 SOMA 异常
+        The category of the error (e.g., 'model', 'validation', 'conversion', 'audio', 'config', 'unknown').
     """
-    return isinstance(exc, SOMAError)
+    return classify_error(error)
 
 
-def get_error_category(exc: Exception) -> str:
-    """
-    获取异常类别
+def format_error(error: Exception, include_traceback: bool = False) -> str:
+    """Format an error message.
     
     Args:
-        exc: 异常对象
+        error: The error to format.
+        include_traceback: Whether to include the traceback.
         
     Returns:
-        str: 异常类别 ('soma', 'config', 'model', 'audio', 'security', 'conversion', 'unknown')
+        A formatted error message string.
     """
-    if isinstance(exc, SOMAError):
-        if isinstance(exc, ConfigError):
-            return "config"
-        elif isinstance(exc, SOMAModelError):
-            return "model"
-        elif isinstance(exc, SOMAAudioError):
-            return "audio"
-        elif isinstance(exc, SecurityError):
-            return "security"
-        elif isinstance(exc, SOMAConversionError):
-            return "conversion"
-        else:
-            return "soma"
-    return "unknown"
-
-
-def format_error(exc: Exception, include_details: bool = True) -> str:
-    """
-    格式化异常信息
-    
-    Args:
-        exc: 异常对象
-        include_details: 是否包含详细信息
-        
-    Returns:
-        str: 格式化的错误信息
-    """
-    if isinstance(exc, SOMAError):
-        if include_details and exc.details:
-            details_str = ", ".join(f"{k}={v}" for k, v in exc.details.items())
-            return f"{exc.message} ({details_str})"
-        return exc.message
-    
-    # 非 SOMA 异常
-    if include_details:
-        return f"{type(exc).__name__}: {str(exc)}"
-    return str(exc)
-
-
-# 导出所有异常类
-__all__ = [
-    "SOMAError",
-    "SOMADependencyError",
-    "SOMAModelError",
-    "SOMAModelNotFoundError",
-    "SOMAModelCorruptedError",
-    "SOMAValidationError",
-    "SOMAConversionError",
-    "SOMAAudioError",
-    "SOMARuntimeError",
-    "ConfigError",
-    "ConfigLoadError",
-    "ConfigValidationError",
-    "ConfigTypeError",
-    "SecurityError",
-    "PathTraversalError",
-    "AudioValidationError",
-    "ModelSecurityError",
-    "ModelError",  # 别名
-    "ModelLoadError",  # 别名
-    "ModelNotFoundError",  # 别名
-    "AudioError",  # 别名
-    "AudioLoadError",  # 别名
-    "AudioFormatError",  # 别名
-    "AudioProcessingError",  # 别名
-    "SeparatorError",  # 别名
-    "SeparationError",  # 别名
-    "VoiceConverterError",  # 别名
-    "VoiceConversionError",  # 别名
-    "is_soma_error",  # 辅助函数
-    "get_error_category",  # 辅助函数
-]
+    import traceback
+    message = f"{type(error).__name__}: {error}"
+    if include_traceback:
+        tb = traceback.format_exception(type(error), error, error.__traceback__)
+        message += "\n" + "".join(tb)
+    return message

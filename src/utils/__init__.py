@@ -1,7 +1,7 @@
 """
-SOMA Utils - 通用工具模块
+SOMA Utils - Common utility module
 
-提供音频处理、日志、参数校验和文件处理工具。
+Provides audio processing、logging、parameter validation and file handling tools。
 """
 
 from src.utils.audio_io import (

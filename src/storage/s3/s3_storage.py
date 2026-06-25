@@ -10,19 +10,19 @@ from boto3.s3.transfer import TransferConfig
 import logging
 logger = logging.getLogger(__name__)
 
-# 允许的文件名字符集（面向用户输入的约束）
-# 注意：不包含 / 以防止路径遍历
+# Allowed filename character set（Constraints for user input）
+# Note：Does not include / To prevent path traversal
 FILE_NAME_ALLOWED_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 
 
 class ListFilesResult(TypedDict):
-    # list_files 的返回结构类型
+    # list_files Return structure type
     keys: List[str]
     is_truncated: bool
     next_continuation_token: Optional[str]
 
 class S3SyncStorage:
-    """S3兼容存储实现"""
+    """S3Compatible storage implementation"""
 
     def __init__(self, *, endpoint_url: Optional[str] = None, access_key: str, secret_key: str, bucket_name: str, region: str = "cn-beijing"):
         self.endpoint_url = os.environ.get("COZE_BUCKET_ENDPOINT_URL") or endpoint_url or ''
@@ -48,10 +48,10 @@ class S3SyncStorage:
                             break
                 except Exception as e:
                     logger.error(f"Error loading COZE_BUCKET_ENDPOINT_URL: {e}")
-                    # 保持向下校验逻辑，避免在此处中断
+                    # Keep downward validation logic，Avoid interruption here
             if endpoint is None or endpoint == "":
-                logger.error("未配置存储端点：请设置endpoint_url")
-                raise ValueError("未配置存储端点：请设置endpoint_url")
+                logger.error("Storage endpoint not configured: please set endpoint_url")
+                raise ValueError("Storage endpoint not configured: please set endpoint_url")
 
             client = boto3.client(
                 "s3",
@@ -61,7 +61,7 @@ class S3SyncStorage:
                 region_name=self.region,
             )
 
-            # 注册 before-call 钩子，发送前注入 x-storage-token 头
+            # Register before-call hook, inject x-storage-token header before sending
             def _inject_header(**kwargs):
                 try:
                     from coze_workload_identity import Client as CozeClient
@@ -91,57 +91,57 @@ class S3SyncStorage:
         return f"{stem}_{uniq}{suffix}"
 
     def _extract_logid(self, e: Exception) -> Optional[str]:
-        """从 ClientError 中提取 x-tt-logid"""
+        """Extract x-tt-logid from ClientError"""
         if isinstance(e, ClientError):
             headers = (e.response or {}).get("ResponseMetadata", {}).get("HTTPHeaders", {})
             return headers.get("x-tt-logid")
         return None
 
     def _error_msg(self, msg: str, e: Exception) -> str:
-        """构建带 logid 的错误信息"""
+        """Build error message with logid"""
         logid = self._extract_logid(e)
         if logid:
             return f"{msg}: {e} (x-tt-logid: {logid})"
         return f"{msg}: {e}"
 
     def _resolve_bucket(self, bucket: Optional[str]) -> str:
-        """统一解析 bucket 来源，确保得到有效桶名。"""
+        """Unified bucket source parsing, ensures valid bucket name."""
         target_bucket = bucket or os.environ.get("COZE_BUCKET_NAME") or self.bucket_name
         if not target_bucket:
-            raise ValueError("未配置 bucket：请传入 bucket 或设置 COZE_BUCKET_NAME，或在实例化时提供 bucket_name")
+            raise ValueError("Bucket not configured: please provide bucket or set COZE_BUCKET_NAME, or provide bucket_name when instantiating")
         return target_bucket
 
     def _validate_file_name(self, name: str) -> None:
-        """校验 S3 对象命名：长度≤1024；允许 [A-Za-z0-9._-/]；不以 / 起止且不含 //。"""
+        """Validate S3 object naming: length<=1024; allows [A-Za-z0-9._-/]; does not start/end with / and does not contain //."""
         msg = (
-            "file name invalid: 文件名需满足以下 S3 对象命名规范："
-            "1) 长度 1–1024 字节；"
-            "2) 仅允许字母、数字、点(.)、下划线(_)、短横(-)、目录分隔符(/)；"
-            "3) 不允许空格或以下特殊字符：? # & % { } ^ [ ] ` \\ < > ~ | \" ' + = : ;；"
-            "4) 不以 / 开头或结尾，且不包含连续的 //；"
-            "示例：report_2025-12-11.pdf、images/photo-01.png。"
+            "file name invalid: File name must comply with the following S3 object naming rules: "
+            "1) Length 1-1024 bytes; "
+            "2) Only letters, numbers, dots (.), underscores (_), hyphens (-), directory separators (/) are allowed; "
+            "3) Spaces or the following special characters are not allowed: ? # & % { } ^ [ ] ` \\ < > ~ | \" ' + = : ; ; "
+            "4) Does not start or end with /, and does not contain consecutive //; "
+            "Example: report_2025-12-11.pdf, images/photo-01.png."
         )
 
         if not name or not name.strip():
-            raise ValueError(msg + "（原因：文件名为空）")
+            raise ValueError(msg + " (Reason: File name is empty)")
 
-        # S3 限制对象 key 最大 1024 字节，这里沿用到输入文件名
+        # S3 limits object key to maximum 1024 bytes, apply same limit to input file name
         if len(name.encode("utf-8")) > 1024:
-            raise ValueError(msg + "（原因：长度超过 1024 字节）")
+            raise ValueError(msg + " (Reason: Length exceeds 1024 bytes)")
 
         if name.startswith("/") or name.endswith("/"):
-            raise ValueError(msg + "（原因：以 / 开头或结尾）")
+            raise ValueError(msg + " (Reason: Starts or ends with /)")
         if "//" in name:
-            raise ValueError(msg + "（原因：包含连续的 //）")
+            raise ValueError(msg + " (Reason: Contains consecutive //)")
 
-        # 允许字符集校验
+        # Allowed character set validation
         if not FILE_NAME_ALLOWED_RE.match(name):
             bad = re.findall(r"[^A-Za-z0-9._\-/]", name)
-            example = bad[0] if bad else "非法字符"
-            raise ValueError(msg + f"（原因：包含非法字符，例如：{example}）")
+            example = bad[0] if bad else "illegal character"
+            raise ValueError(msg + f" (Reason: Contains illegal character, e.g.: {example})")
 
     def upload_file(self, *, file_content: bytes, file_name: str, content_type: str = "application/octet-stream", bucket: Optional[str] = None) -> str:
-        # 先对输入文件名做规范校验，避免生成无效对象 key
+        # Validate input file name first to avoid generating invalid object keys
         self._validate_file_name(file_name)
         try:
             client = self._get_client()
@@ -193,19 +193,19 @@ class S3SyncStorage:
                 try:
                     body.close()
                 except Exception as ce:
-                    # 资源关闭失败不影响读取结果，仅记录以便排查
+                    # Resource close failure doesn't affect read result, only record for debugging
                     logger.debug("Failed to close S3 response body: %s", ce)
         except Exception as e:
             logger.error(self._error_msg("Error reading file from S3", e))
             raise e
 
     def list_files(self, *, prefix: Optional[str] = None, bucket: Optional[str] = None, max_keys: int = 1000, continuation_token: Optional[str] = None) -> ListFilesResult:
-        """列出对象，支持前缀过滤与分页；返回 keys/is_truncated/next_continuation_token。"""
+        """List objects, supports prefix filter and pagination; returns keys/is_truncated/next_continuation_token."""
         try:
             client = self._get_client()
             target_bucket = self._resolve_bucket(bucket)
             if max_keys <= 0 or max_keys > 1000:
-                raise ValueError("max_keys 必须在 1 到 1000 之间")
+                raise ValueError("max_keys must be between 1 and 1000")
 
             kwargs: Dict[str, Any] = {
                 "Bucket": target_bucket,
@@ -232,7 +232,7 @@ class S3SyncStorage:
             raise e
 
     def generate_presigned_url(self, *, key: str, bucket: Optional[str] = None, expire_time: int = 1800) -> str:
-        """通过 S3 Proxy 生成签名 URL。"""
+        """Generate presigned URL through S3 proxy."""
         import json
         import urllib.request as urllib_request
         try:
@@ -244,15 +244,15 @@ class S3SyncStorage:
                 try:
                     coze_client.close()
                 except Exception:
-                    # 资源释放失败不影响后续流程
+                    # Resource release failure doesn't affect subsequent flow
                     pass
         except Exception as e:
             logger.error(f"Error loading x-storage-token: {e}")
-            raise RuntimeError(f"获取 x-storage-token 失败: {e}")
+            raise RuntimeError(f"Failed to get x-storage-token: {e}")
         try:
             sign_base = os.environ.get("COZE_BUCKET_ENDPOINT_URL") or self.endpoint_url
             if not sign_base:
-                raise ValueError("未配置签名端点：请设置 COZE_BUCKET_ENDPOINT_URL 或传入 endpoint_url")
+                raise ValueError("Signature endpoint not configured: please set COZE_BUCKET_ENDPOINT_URL or provide endpoint_url")
             sign_url_endpoint = sign_base.rstrip("/") + "/sign-url"
 
             headers = {
@@ -266,7 +266,7 @@ class S3SyncStorage:
             request = urllib_request.Request(sign_url_endpoint, data=data, headers=headers, method="POST")
         except Exception as e:
             logger.error(f"Error creating request for sign-url: {e}")
-            raise RuntimeError(f"创建 sign-url 请求失败: {e}")
+            raise RuntimeError(f"Failed to create sign-url request: {e}")
 
         try:
             with urllib_request.urlopen(request) as resp:
@@ -284,10 +284,10 @@ class S3SyncStorage:
                     url_value = obj.get("url") or obj.get("signed_url") or obj.get("presigned_url")
                     if url_value:
                         return url_value
-                    raise ValueError("签名服务返回缺少 data.url/url 字段")
+                    raise ValueError("Signature service response missing data.url/url field")
                 return text
         except Exception as e:
-            raise RuntimeError(f"生成签名URL失败: {e}")
+            raise RuntimeError(f"GenerateSignatureURLFail: {e}")
 
     def stream_upload_file(
             self,
@@ -301,16 +301,16 @@ class S3SyncStorage:
             max_concurrency: int = 1,
             use_threads: bool = False,
     ) -> str:
-        """流式上传（文件对象）
-        - fileobj: 任何带有 read() 方法的文件对象（如 open(..., 'rb') 返回的对象、io.BytesIO 等）
-        - file_name: 原始文件名，用于生成唯一 key
-        - content_type: MIME 类型
-        - bucket: 目标桶；为空时取环境变量或实例默认值
-        - multipart_chunksize: 分片大小（默认 5MB，以适配代理层限制）
-        - multipart_threshold: 触发分片上传的阈值（默认 5MB）
-        - max_concurrency: 并发分片上传的并发数（默认 1，避免代理层节流影响）
-        - use_threads: 是否启用线程并发（默认 False）
-        返回：最终写入的对象 key
+        """Streaming upload (file object)
+        - fileobj: Any file-like object with read() method (e.g. open(..., 'rb'), io.BytesIO, etc.)
+        - file_name: Original file name, used to generate unique key
+        - content_type: MIME type
+        - bucket: Object bucket; defaults to environment variable or instance default
+        - multipart_chunksize: Part size (default 5MB, to adapt to proxy layer limits)
+        - multipart_threshold: Threshold to trigger multipart upload (default 5MB)
+        - max_concurrency: Concurrent multipart upload count (default 1, to avoid proxy layer flow control)
+        - use_threads: Whether to enable thread concurrency (default False)
+        Returns: Final written object key
         """
         try:
             client = self._get_client()
@@ -318,7 +318,7 @@ class S3SyncStorage:
             key = self._generate_object_key(original_name=file_name)
 
             extra_args = {"ContentType": content_type} if content_type else {}
-            # 使用 boto3 的高阶方法执行多段上传（传入 TransferConfig 控制分片大小）
+            # Use boto3 high-level method to execute multipart upload (pass TransferConfig to control part size)
 
             config = TransferConfig(
                 multipart_chunksize=multipart_chunksize,
@@ -339,11 +339,11 @@ class S3SyncStorage:
             bucket: Optional[str] = None,
             timeout: int = 30,
     ) -> str:
-        """从 URL 流式下载并上传到 S3
-        - url: 源文件 URL
-        - bucket: 目标桶；为空时取环境变量或实例默认值
-        - timeout: HTTP 请求超时时间（秒，默认 30）
-        返回：最终写入的对象 key
+        """Streaming download from URL and upload to S3
+        - url: Source file URL
+        - bucket: Object bucket; defaults to environment variable or instance default
+        - timeout: HTTP request timeout (seconds, default 30)
+        Returns: Final written object key
         """
         import urllib.request as urllib_request
         from urllib.parse import urlparse, unquote
@@ -366,19 +366,19 @@ class S3SyncStorage:
     def trunk_upload_file(self, *, chunk_iter: Iterable[bytes], file_name: str,
                            content_type: str = "application/octet-stream", bucket: Optional[str] = None,
                            part_size: int = 5 * 1024 * 1024) -> str:
-        """流式上传（字节迭代器，显式分片 Multipart Upload）
-        - chunk_iter: 可迭代对象，逐块产生 bytes；每块大小可变（内部累积到 part_size 再上传），最后一块可小于 5MB
-        - file_name: 原始文件名，用于生成唯一 key
-        - content_type: MIME 类型
-        - bucket: 目标桶；为空时取环境或实例默认值
-        - part_size: 每个 part 的最小大小（除最后一个）；默认 5MB
-        返回：最终写入的对象 key
+        """Streaming upload (byte iterator, explicit multipart upload)
+        - chunk_iter: Iterable object, produces bytes chunk by chunk; each chunk size is variable (accumulated internally to part_size before upload), last chunk may be less than 5MB
+        - file_name: Original file name, used to generate unique key
+        - content_type: MIME type
+        - bucket: Object bucket; defaults to environment or instance default
+        - part_size: Minimum size for each part (except the last one); default 5MB
+        Returns: Final written object key
         """
         client = self._get_client()
         target_bucket = self._resolve_bucket(bucket)
         key = self._generate_object_key(original_name=file_name)
 
-        # 初始化分片上传
+        # Initialize multipart upload
         try:
             init_resp = client.create_multipart_upload(Bucket=target_bucket, Key=key, ContentType=content_type)
             upload_id = init_resp["UploadId"]
@@ -402,13 +402,13 @@ class S3SyncStorage:
                     parts.append({"PartNumber": part_number, "ETag": resp["ETag"]})
                     part_number += 1
 
-            # 上传最后不足 part_size 的余量
+            # Upload remaining data less than part_size
             if len(buffer) > 0:
                 resp = client.upload_part(Bucket=target_bucket, Key=key, UploadId=upload_id, PartNumber=part_number,
                                           Body=bytes(buffer))
                 parts.append({"PartNumber": part_number, "ETag": resp["ETag"]})
 
-            # 完成分片
+            # Complete multipart upload
             client.complete_multipart_upload(
                 Bucket=target_bucket,
                 Key=key,

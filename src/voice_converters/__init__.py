@@ -1,20 +1,20 @@
 """
 SOMA Voice Converters Module
-声音转换模块 - 双引擎架构
+Voice conversion module - Dual engine architecture
 
-提供统一的声音转换接口，支持:
+Provides unified voice conversion interface, supports:
 - RVC v2 (Retrieval-Based Voice Conversion)
 - So-VITS-SVC 4.1
 
-模块结构:
-- base: 抽象基类和通用接口
-- rvc_converter: RVC v2 引擎实现
-- sovits_converter: So-VITS-SVC 引擎实现
-- factory: 引擎工厂和自动识别
+Module structure:
+- base: Abstract base class and common interface
+- rvc_converter: RVC v2 engine implementation
+- sovits_converter: So-VITS-SVC engine implementation
+- factory: Engine factory and automatic detection
 """
 
 from .base import (
-    # 基类和枚举
+    # Base class and enum
     BaseVoiceConverter,
     ConversionParams,
     ConversionResult,
@@ -25,7 +25,7 @@ from .base import (
     EngineCapability,
 )
 
-# 便捷访问列表
+# Convenience access list
 __all_base__ = [
     "BaseVoiceConverter",
     "ConversionParams",
@@ -37,9 +37,9 @@ __all_base__ = [
     "EngineCapability",
 ]
 
-# 延迟导入引擎类
+# Delay import engine class
 def __getattr__(name: str):
-    """延迟导入引擎类"""
+    """Delay import engine class"""
     if name == "RVCConverter":
         from .rvc_converter import RVCConverter
         return RVCConverter
@@ -59,9 +59,9 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-# 导出列表
+# ExportList
 __all__ = [
-    # 基类和接口
+    # Base class and interface
     "BaseVoiceConverter",
     "ConversionParams",
     "ConversionResult",
@@ -71,17 +71,17 @@ __all__ = [
     "LazyImportMixin",
     "EngineCapability",
     
-    # 引擎类
+    # Engine class
     "RVCConverter",
     "SoVITSConverter",
     
-    # 工厂和管理器
+    # Factory and manager
     "ConverterFactory",
     "VoiceConverterManager",
 ]
 
 
-# 便捷函数
+# Convenience function
 def create_converter(
     model_path: str,
     config_path: str = None,
@@ -91,20 +91,20 @@ def create_converter(
     **kwargs
 ):
     """
-    创建声音转换器 (便捷函数)
+    Create voice converter (convenience function)
     
-    自动识别模型类型并创建转换器。
+    Automatically detect model type and create converter.
     
     Args:
-        model_path: 模型文件路径
-        config_path: 配置文件路径
-        index_path: 索引文件路径
-        engine: 强制指定引擎 ('rvc', 'sovits')
-        device: 运行设备
-        **kwargs: 其他参数
+        model_path: ModelFile path
+        config_path: Configuration filePath
+        index_path: IndexFile path
+        engine: Force specify engine ('rvc', 'sovits')
+        device: Run device
+        **kwargs: OtherParameter
         
     Returns:
-        BaseVoiceConverter: 转换器实例
+        BaseVoiceConverter: Converter instance
         
     Example:
         >>> converter = create_converter("path/to/model.pth")
@@ -124,10 +124,10 @@ def create_converter(
 
 def get_available_engines():
     """
-    获取可用的引擎列表
+    Get available engine list
     
     Returns:
-        List[Dict]: 引擎信息列表
+        List[Dict]: Engine info list
         
     Example:
         >>> engines = get_available_engines()
@@ -141,13 +141,13 @@ def get_available_engines():
 
 def get_conversion_params(engine: str = None) -> "ConversionParams":
     """
-    获取转换参数
+    GetConvertParameter
     
     Args:
-        engine: 引擎类型
+        engine: Engine class type
         
     Returns:
-        ConversionParams: 推荐参数
+        ConversionParams: Recommended parameters
     """
     from .base import ConversionParams
     from .factory import ConverterFactory
@@ -158,5 +158,5 @@ def get_conversion_params(engine: str = None) -> "ConversionParams":
     return ConverterFactory.get_recommended_params(engine)
 
 
-# 版本信息
+# Version info
 __version__ = "0.1.0"

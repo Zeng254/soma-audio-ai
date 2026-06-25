@@ -1,33 +1,33 @@
 """
-SOMA 安全模块
+SOMA Security module
 
-提供输入验证和安全检查功能，包括：
-- 路径安全校验 (PathValidator)
-- 音频文件验证 (AudioValidator)
-- 安全模型加载 (SafeModelLoader)
+Provides input validation and security checks，Including：
+- Path security validation (PathValidator)
+- AudioFile validation (AudioValidator)
+- SecurityModel loading (SafeModelLoader)
 
-层级结构:
+Layered structure:
     src/security/
-    ├── __init__.py         # 模块导出
-    ├── path_validator.py    # 路径安全校验
-    ├── audio_validator.py   # 音频文件验证
-    └── model_loader.py      # 安全模型加载
+    ├── __init__.py         # ModuleExport
+    ├── path_validator.py    # Path security validation
+    ├── audio_validator.py   # AudioFile validation
+    └── model_loader.py      # SecurityModel loading
 
-使用示例:
-    # 路径验证
+Usage example:
+    # PathValidate
     from src.security import PathValidator, safe_path
 
     validator = PathValidator()
     safe = validator.validate("/path/to/file")
 
-    # 音频验证
+    # AudioValidate
     from src.security import AudioValidator, validate_audio
 
     result = validate_audio("/path/to/audio.wav")
     if result.is_valid:
-        print(f"采样率: {result.metadata.sample_rate}")
+        print(f"Sample rate: {result.metadata.sample_rate}")
 
-    # 模型加载
+    # Model loading
     from src.security import SafeModelLoader, load_model
 
     model = load_model("path/to/model.pth")
@@ -64,7 +64,7 @@ from .model_loader import (
 )
 
 __all__ = [
-    # 路径验证
+    # PathValidate
     "PathValidator",
     "PathTraversalError",
     "SecurityError",
@@ -73,7 +73,7 @@ __all__ = [
     "ensure_directory",
     "get_validator",
 
-    # 音频验证
+    # AudioValidate
     "AudioValidator",
     "AudioFormat",
     "AudioMetadata",
@@ -83,7 +83,7 @@ __all__ = [
     "validate_audio",
     "get_audio_validator",
 
-    # 模型加载
+    # Model loading
     "SafeModelLoader",
     "ModelMetadata",
     "ModelLoadError",
