@@ -5,10 +5,15 @@ RVC Converter - RVC v2 声音转换引擎实现
 支持高质量的语音音色转换。
 """
 
-from typing import Optional, Dict, Any, List
+from __future__ import annotations
+
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from pathlib import Path
 import numpy as np
 import json
+
+if TYPE_CHECKING:
+    import torch
 
 from .base import (
     BaseVoiceConverter,

@@ -163,9 +163,20 @@ def sample_rate():
 
 @pytest.fixture
 def temp_audio_file(temp_audio_dir):
-    """临时音频文件路径（temp_audio_file 的别名）"""
+    """临时音频文件路径"""
     import numpy as np
-    import soundfile as sf
+    
+    # 优先使用 soundfile，否则使用 scipy.io.wavfile
+    try:
+        import soundfile as sf
+        use_soundfile = True
+    except ImportError:
+        use_soundfile = False
+        try:
+            from scipy.io import wavfile
+            use_scipy = True
+        except ImportError:
+            pytest.skip("Neither soundfile nor scipy available for audio file creation")
     
     sample_rate = 44100
     duration = 1.0
@@ -173,7 +184,13 @@ def temp_audio_file(temp_audio_dir):
     audio = np.sin(2 * np.pi * 440 * t).astype(np.float32)
     
     file_path = temp_audio_dir / "test_audio.wav"
-    sf.write(str(file_path), audio, sample_rate)
+    
+    if use_soundfile:
+        sf.write(str(file_path), audio, sample_rate)
+    else:
+        audio_int16 = (audio * 32767).astype(np.int16)
+        wavfile.write(str(file_path), sample_rate, audio_int16)
+    
     return str(file_path)
 
 
@@ -195,6 +212,7 @@ temp_audio_file_fixture = temp_audio_file
 @pytest.fixture
 def mock_model_file(temp_model_dir):
     """创建临时模型文件（模拟 pickle）"""
+    pytest.importorskip("torch", reason="PyTorch required for this test")
     import torch
     
     file_path = temp_model_dir / "model.pth"

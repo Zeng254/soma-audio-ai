@@ -5,10 +5,15 @@ SoVITS Converter - So-VITS-SVC 4.1 声音转换引擎实现
 支持扩散模式和非扩散模式。
 """
 
-from typing import Optional, Dict, Any, List, Union
+from __future__ import annotations
+
+from typing import Optional, Dict, Any, List, Union, TYPE_CHECKING
 from pathlib import Path
 import numpy as np
 import json
+
+if TYPE_CHECKING:
+    import torch
 
 from .base import (
     BaseVoiceConverter,
