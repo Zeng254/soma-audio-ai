@@ -2,6 +2,7 @@
 Audio Converter - AudioFormat converter
 Supports conversion between multiple audio formats
 """
+# Audio format conversion module
 
 from dataclasses import dataclass
 from enum import Enum
