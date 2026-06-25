@@ -371,7 +371,32 @@ class AudioValidator:
             AudioMetadata or None
         """
         result = self.validate(path, check_metadata=True)
-        return result.metadata if result.is_valid else None
+        if not result.is_valid:
+            return None
+        # If soundfile was not available and metadata is still default zeros,
+        # try stdlib wave module as fallback for WAV files
+        if result.metadata and result.metadata.sample_rate == 0:
+            self._read_metadata_fallback(path, result)
+        return result.metadata
+
+    def _read_metadata_fallback(
+        self,
+        path: Path,
+        result: AudioValidationResult
+    ) -> None:
+        """Fallback metadata reading using stdlib wave/aifc modules"""
+        try:
+            import wave
+            with wave.open(str(path), 'rb') as wf:
+                result.metadata.sample_rate = wf.getframerate()
+                result.metadata.channels = wf.getnchannels()
+                result.metadata.bit_depth = wf.getsampwidth() * 8
+                n_frames = wf.getnframes()
+                result.metadata.duration = n_frames / wf.getframerate()
+                result.metadata.is_lossless = True
+                result.metadata.codec = 'pcm'
+        except Exception:
+            pass  # Cannot read metadata
 
 
 # Global validator instance

@@ -115,7 +115,7 @@ def setup_logging(
             log_config = None
 
         if log_config:
-            level = log_config.level if not level else level
+            level = level if level != "INFO" else log_config.level
             log_dir = log_dir or str(Path(log_config.log_dir).expanduser())
             log_file = log_file or log_config.log_file_name
             console_output = console_output if console_output else log_config.console_output

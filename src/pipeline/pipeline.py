@@ -13,8 +13,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class Node types(Enum):
-    """Node types"""
+class NodeTypes(Enum):
+    """NodeTypes"""
     SEPARATOR = "separator"
     EFFECT = "effect"
     CONVERTER = "converter"
@@ -23,14 +23,14 @@ class Node types(Enum):
 
 
 @dataclass
-class Pipeline node:
+class PipelineNode:
     """
-    Pipeline node
+    PipelineNode
     
     Represents a processing step in the pipeline
     """
     name: str                                    # NodeName
-    node_type: Node types                          # Node types
+    node_type: NodeTypes                          # NodeTypes
     process_fn: Callable[[np.ndarray, int], tuple]  # ProcessFunction
     params: Dict[str, Any] = field(default_factory=dict)  # ProcessParameter
     enabled: bool = True                         # Whether enabled
@@ -89,13 +89,13 @@ class AudioPipeline:
         """
         self.name = name
         self.default_sample_rate = sample_rate
-        self.nodes: List[Pipeline node] = []
+        self.nodes: List[PipelineNode] = []
         self._node_times: Dict[str, float] = {}
     
     def add_node(
         self,
         name: str,
-        node_type: Node types,
+        node_type: NodeTypes,
         process_fn: Callable,
         params: Optional[Dict] = None,
         enabled: bool = True,
@@ -105,7 +105,7 @@ class AudioPipeline:
         
         Args:
             name: NodeName
-            node_type: Node types
+            node_type: NodeTypes
             process_fn: ProcessFunction
             params: ProcessParameter
             enabled: Whether enabled
@@ -113,7 +113,7 @@ class AudioPipeline:
         Returns:
             self
         """
-        node = Pipeline node(
+        node = PipelineNode(
             name=name,
             node_type=node_type,
             process_fn=process_fn,
@@ -146,7 +146,7 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=Node types.SEPARATOR,
+            node_type=NodeTypes.SEPARATOR,
             process_fn=process,
             params=params,
         )
@@ -174,7 +174,7 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=Node types.EFFECT,
+            node_type=NodeTypes.EFFECT,
             process_fn=process,
             params=params,
         )
@@ -201,7 +201,7 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=Node types.FILTER,
+            node_type=NodeTypes.FILTER,
             process_fn=process,
             params=params,
         )
@@ -228,7 +228,7 @@ class AudioPipeline:
         
         return self.add_node(
             name=name,
-            node_type=Node types.CUSTOM,
+            node_type=NodeTypes.CUSTOM,
             process_fn=wrapped_process,
             params=params,
         )
@@ -241,7 +241,7 @@ class AudioPipeline:
                 return True
         return False
     
-    def get_node(self, name: str) -> Optional[Pipeline node]:
+    def get_node(self, name: str) -> Optional[PipelineNode]:
         """GetNode"""
         for node in self.nodes:
             if node.name == name:
@@ -300,7 +300,7 @@ class AudioPipeline:
             node_start = time.time()
             
             try:
-                if node.node_type == Node types.SEPARATOR and return_tracks:
+                if node.node_type == NodeTypes.SEPARATOR and return_tracks:
                     # Separator node, save all tracks
                     result_audio, result_sr = node.execute(current_audio, current_sr)
                     separation_results[node.name] = result_audio

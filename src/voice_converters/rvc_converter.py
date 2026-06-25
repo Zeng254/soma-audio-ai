@@ -106,22 +106,40 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
 
     def _init_device(self):
         """Initialize device"""
-        if self._device:
-            return self._device
+        if self.device:
+            return self.device
 
         # Auto detect device
         try:
             import torch
             if torch.cuda.is_available():
-                self._device = "cuda"
+                self.device = "cuda"
             elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                self._device = "mps"
+                self.device = "mps"
             else:
-                self._device = "cpu"
+                self.device = "cpu"
         except ImportError:
-            self._device = "cpu"
+            self.device = "cpu"
 
-        return self._device
+        return self.device
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def _lazy_import_module(self, name: str):
         """Lazy import module"""
