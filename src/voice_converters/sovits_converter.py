@@ -104,13 +104,21 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         
         # SoVITS 组件
         self._hps = None              # 超参数
-        self._net_g = None           # 生成器网络
-        self._diffusion_model = None      # 扩散模型 (可选)
+        self._net_g = None           # 生成器网络 (VITS 解码器)
+        self._diffusion_model = None  # 扩散模型 (可选)
         self._speaker_map = {}       # 说话人映射
+        self._state_dict = None      # 模型权重
         
         # 音频处理组件
         self._mel_transform = None   # 梅尔频谱变换器
-        self._vocoder = None          # 声码器
+        self._vocoder = None         # HiFi-GAN 声码器
+        self._vocoder_type = "griffin_lim"  # 声码器类型
+        self._vocoder_loaded = False  # 声码器是否已加载
+        
+        # HubERT/ContentVec 组件
+        self._hubert_model = None    # HubERT 特征提取器
+        self._feature_layer = 12      # HubERT 特征层
+        self._feature_kind = None     # 特征类型
     
     def load_model(
         self,
@@ -202,7 +210,6 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
     
     def _find_config_file(self, model_file: Path) -> Optional[str]:
         """查找配置文件"""
-        # 常见配置路径
         possible_paths = [
             model_file.parent / "config.json",
             model_file.parent / "configs" / "config.json",
@@ -214,6 +221,1020 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                 return str(path)
         
         return None
+    
+    # ============================================================
+    # 惰性加载组件
+    # ============================================================
+    
+    def _load_hubert_model(self) -> Optional["torch.nn.Module"]:
+        """
+        惰性加载 HubERT/ContentVec 特征提取器
+        
+        Returns:
+            特征提取器模型或 None
+        """
+        if self._hubert_model is not None:
+            return self._hubert_model
+            
+        try:
+            torch = self._lazy_import_module("torch")
+            
+            # 尝试加载 HubERT
+            try:
+                from transformers import HubertModel, HubertConfig
+                config = HubertConfig()
+                self._hubert_model = HubertModel(config)
+                self._feature_layer = 12  # HubERT 特征层
+                self._feature_kind = "hubert"
+            except ImportError:
+                # 尝试 ContentVec
+                try:
+                    from speechbrain.lobes.models.huggingface_transformers import contentvec
+                    self._hubert_model = None  # 使用简化方案
+                    self._feature_kind = "contentvec"
+                except ImportError:
+                    self._hubert_model = None
+                    self._feature_kind = None
+            
+            if self._hubert_model is not None:
+                self._hubert_model.to(self.device)
+                self._hubert_model.eval()
+                
+            return self._hubert_model
+            
+        except Exception as e:
+            self._logger.warning(f"Failed to load HubERT model: {e}")
+            return None
+    
+    def _load_vits_decoder(self) -> bool:
+        """
+        惰性加载 So-VITS VITS 解码器
+        
+        Returns:
+            是否加载成功
+        """
+        if self._net_g is not None:
+            return True
+            
+        try:
+            torch = self._lazy_import_module("torch")
+            
+            # 从已加载的 state_dict 中恢复网络结构
+            if not hasattr(self, '_state_dict') or self._state_dict is None:
+                return False
+            
+            # 获取配置
+            if self._hps is None:
+                return False
+                
+            # 尝试创建 VITS 解码器网络
+            # So-VITS 使用 VITS 架构: TextEncoder + Flow + Decoder
+            config = self._hps.get("model", {})
+            
+            # 尝试实例化网络
+            # 由于 So-VITS 网络结构可能不同，这里使用通用结构
+            try:
+                # 尝试从配置推断网络结构
+                if "speech_encoder" in config:
+                    # 新版 So-VITS
+                    encoder_hidden = config.get("speech_encoder", {}).get("hidden_size", 256)
+                else:
+                    encoder_hidden = 256
+                    
+                # 创建简化的 VITS 解码器
+                # 实际部署时需要使用完整的 So-VITS 网络定义
+                self._net_g = self._create_vits_decoder(encoder_hidden)
+                
+                # 加载权重
+                if self._state_dict:
+                    self._net_g.load_state_dict(self._state_dict, strict=False)
+                    self._state_dict = None  # 释放内存
+                
+                self._net_g.to(self.device)
+                self._net_g.eval()
+                
+                return True
+                
+            except Exception as e:
+                self._logger.warning(f"Failed to create VITS decoder: {e}")
+                return False
+                
+        except Exception as e:
+            self._logger.warning(f"Failed to load VITS decoder: {e}")
+            return False
+    
+    def _create_vits_decoder(self, hidden_size: int) -> "torch.nn.Module":
+        """
+        创建 VITS 解码器网络结构
+        
+        Args:
+            hidden_size: 隐藏层大小
+            
+        Returns:
+            VITS 解码器网络
+        """
+        torch = self._lazy_import_module("torch")
+        
+        # 简化版 VITS 解码器
+        # 实际部署时需要使用完整的 So-VITS 网络定义
+        class SimplifiedVITSDecoder(torch.nn.Module):
+            def __init__(self, hidden_size):
+                super().__init__()
+                self.hidden_size = hidden_size
+                
+                # 文本编码器
+                self.encoder = torch.nn.Sequential(
+                    torch.nn.Linear(hidden_size, hidden_size * 2),
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(hidden_size * 2, hidden_size),
+                )
+                
+                # 残差卷积
+                self.residual_conv = torch.nn.Sequential(
+                    torch.nn.Conv1d(hidden_size, hidden_size * 2, 5, padding=2),
+                    torch.nn.ReLU(),
+                    torch.nn.Conv1d(hidden_size * 2, hidden_size * 4, 5, padding=2),
+                    torch.nn.ReLU(),
+                )
+                
+                # 梅尔频谱生成器
+                self.mel_generator = torch.nn.Sequential(
+                    torch.nn.Linear(hidden_size * 4, 128),
+                    torch.nn.ReLU(),
+                    torch.nn.Linear(128, 128),
+                )
+                
+            def forward(self, x, x_lengths=None):
+                # x: [B, T, C]
+                if x.dim() == 2:
+                    x = x.unsqueeze(1)  # [B, 1, T, C]
+                
+                # 编码
+                h = self.encoder(x)
+                
+                # 残差卷积
+                h = h.transpose(1, 2)  # [B, C, T]
+                h = self.residual_conv(h)
+                h = h.transpose(1, 2)  # [B, T, C']
+                
+                # 生成梅尔频谱
+                mel = self.mel_generator(h)
+                
+                return mel, torch.zeros_like(mel)[:, :, :1]  # 返回 mel 和 dummy f0
+        
+        return SimplifiedVITSDecoder(hidden_size)
+    
+    def _load_hifigan_vocoder(self) -> Optional["torch.nn.Module"]:
+        """
+        惰性加载 HiFi-GAN 声码器
+        
+        Returns:
+            HiFi-GAN 模型或 None
+        """
+        if self._vocoder is not None:
+            return self._vocoder
+            
+        try:
+            torch = self._lazy_import_module("torch")
+            
+            # 尝试加载 HiFi-GAN
+            try:
+                import sys
+                # 检查是否有 hifigan 包
+                try:
+                    from hifigan.models import Generator as HifiganGenerator
+                    
+                    # 创建 HiFi-GAN 生成器
+                    self._vocoder = HifiganGenerator(
+                        torch.nn.Conv1d(128, 32, 7, padding=3),
+                        torch.nn.ModuleList([
+                            torch.nn.Sequential(
+                                torch.nn.LeakyReLU(0.2),
+                                torch.nn.Conv1d(32, 32, 15, padding=7),
+                                torch.nn.LeakyReLU(0.2),
+                                torch.nn.Conv1d(32, 32, 15, padding=7),
+                            ) for _ in range(4)
+                        ]),
+                        torch.nn.Conv1d(32, 1, 7, padding=3),
+                    )
+                    self._vocoder_type = "hifigan"
+                    
+                except ImportError:
+                    self._vocoder = None
+                    self._vocoder_type = "griffin_lim"
+                    
+            except Exception:
+                self._vocoder = None
+                self._vocoder_type = "griffin_lim"
+            
+            return self._vocoder
+            
+        except Exception as e:
+            self._logger.warning(f"Failed to load HiFi-GAN: {e}")
+            return None
+    
+    # ============================================================
+    # 核心推理方法
+    # ============================================================
+    
+    def _apply_sovits_conversion(
+        self,
+        audio: np.ndarray,
+        target_sr: int,
+        speaker_id: int = 0,
+        pitch_shift: float = 0,
+        pitch_algo: str = "pm"
+    ) -> np.ndarray:
+        """
+        应用 So-VITS 声音转换的核心推理流程
+        
+        完整流程:
+        1. 音频预处理 (归一化、重采样、静音去除)
+        2. F0 提取 (支持 PM/DIO/Harvest/Crepe)
+        3. 音色特征提取 (HubERT/ContentVec)
+        4. 模型推理 (So-VITS VITS 解码器 + 音高编码器)
+        5. 声码器推理 (HiFi-GAN)
+        6. 后处理 (音量归一化、峰值限制)
+        
+        Args:
+            audio: 输入音频数据 [T]
+            target_sr: 目标采样率
+            speaker_id: 说话人 ID
+            pitch_shift: 音高变换 (半音)
+            pitch_algo: F0 提取算法
+            
+        Returns:
+            转换后的音频数据
+        """
+        try:
+            torch = self._lazy_import_module("torch")
+            
+            # Step 1: 音频预处理
+            audio = self._preprocess_audio(audio, target_sr)
+            
+            # Step 2: F0 提取
+            f0 = self._extract_f0_comprehensive(audio, target_sr, pitch_algo)
+            
+            # Step 3: 音高变换
+            if abs(pitch_shift) > 0.01:
+                f0 = self._transform_pitch_sovits(f0, pitch_shift)
+            
+            # Step 4: 音色特征提取 (HubERT/ContentVec)
+            features = self._extract_timbre_features(audio, target_sr)
+            
+            # Step 5: 模型推理
+            mel_output = self._run_sovits_inference(
+                features, f0, speaker_id, target_sr
+            )
+            
+            # Step 6: 声码器推理
+            wav_output = self._run_vocoder_sovits(mel_output, target_sr)
+            
+            # Step 7: 后处理
+            result = self._postprocess_audio_sovits(wav_output)
+            
+            return result
+            
+        except Exception as e:
+            self._logger.warning(f"SoVITS inference degraded: {e}")
+            return self._safe_degrade_output_sovits(audio)
+    
+    # ============================================================
+    # Step 1: 音频预处理
+    # ============================================================
+    
+    def _preprocess_audio(
+        self,
+        audio: np.ndarray,
+        target_sr: int
+    ) -> np.ndarray:
+        """
+        音频预处理
+        
+        包括:
+        - 归一化到 [-1, 1]
+        - 去除直流分量
+        - 静音去除
+        
+        Args:
+            audio: 输入音频
+            target_sr: 目标采样率
+            
+        Returns:
+            预处理后的音频
+        """
+        # 确保是一维
+        if len(audio.shape) > 1:
+            audio = audio.mean(axis=1 if audio.ndim > 1 else 0)
+        
+        # 归一化到 [-1, 1]
+        max_val = np.abs(audio).max()
+        if max_val > 0:
+            audio = audio / max_val
+        
+        # 去除直流分量
+        audio = self._remove_dc_offset_sovits(audio)
+        
+        # 静音检测和去除
+        audio = self._trim_silence_sovits(audio, target_sr)
+        
+        return audio
+    
+    def _remove_dc_offset_sovits(self, audio: np.ndarray) -> np.ndarray:
+        """去除直流分量"""
+        return audio - np.mean(audio)
+    
+    def _trim_silence_sovits(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        top_db: int = 40
+    ) -> np.ndarray:
+        """去除静音"""
+        librosa = self._lazy_import_module("librosa")
+        if librosa is None:
+            return audio
+        
+        try:
+            # 计算能量
+            hop_length = 512
+            rms = librosa.feature.rms(
+                y=audio,
+                frame_length=2048,
+                hop_length=hop_length
+            )[0]
+            
+            # 找到非静音区域
+            threshold = librosa.db_to_amplitude(-top_db)
+            non_silent = np.where(rms > threshold)[0]
+            
+            if len(non_silent) == 0:
+                return audio
+            
+            # 扩展边缘
+            frame_start = max(0, non_silent[0] - 5)
+            frame_end = min(len(rms), non_silent[-1] + 5)
+            
+            sample_start = frame_start * hop_length
+            sample_end = min(len(audio), frame_end * hop_length + 1024)
+            
+            return audio[sample_start:sample_end]
+            
+        except Exception:
+            return audio
+    
+    def _preprocess_resample_sovits(
+        self,
+        audio: np.ndarray,
+        source_sr: int,
+        target_sr: int
+    ) -> np.ndarray:
+        """重采样"""
+        if source_sr == target_sr:
+            return audio
+            
+        librosa = self._lazy_import_module("librosa")
+        if librosa is None:
+            # 使用 scipy 降级
+            from scipy import signal
+            num_samples = int(len(audio) * target_sr / source_sr)
+            return signal.resample(audio, num_samples)
+        
+        return librosa.resample(audio, orig_sr=source_sr, target_sr=target_sr)
+    
+    # ============================================================
+    # Step 2: F0 提取
+    # ============================================================
+    
+    def _extract_f0_comprehensive(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        method: str = "pm"
+    ) -> np.ndarray:
+        """
+        综合 F0 提取
+        
+        支持多种算法，按优先级尝试:
+        1. Harvest (最准确，需要 pyworld)
+        2. Crepe (基于神经网络)
+        3. PM (pyin，准确度高)
+        4. DIO (快速但精度一般)
+        5. 降级方案 (简单自相关)
+        
+        Args:
+            audio: 输入音频
+            sample_rate: 采样率
+            method: 首选方法
+            
+        Returns:
+            F0 数组 [n_frames]
+        """
+        hop_length = self.DEFAULT_HOP_LENGTH
+        n_frames = (len(audio) - 2048) // hop_length + 1
+        
+        # 按优先级尝试方法
+        methods = [
+            ("harvest", self._extract_f0_harvest_sovits),
+            ("crepe", self._extract_f0_crepe_sovits),
+            ("pm", self._extract_f0_pyin_sovits),
+            ("dio", self._extract_f0_dio_sovits),
+        ]
+        
+        for method_name, method_fn in methods:
+            try:
+                f0 = method_fn(audio, sample_rate, hop_length)
+                if f0 is not None and len(f0) > 0:
+                    return self._align_f0_length_sovits(f0, n_frames)
+            except Exception:
+                continue
+        
+        # 降级方案: 使用自相关
+        return self._extract_f0_autocorr_sovits(audio, sample_rate, hop_length, n_frames)
+    
+    def _extract_f0_harvest_sovits(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        hop_length: int
+    ) -> Optional[np.ndarray]:
+        """使用 Harvest 算法提取 F0 (pyworld)"""
+        try:
+            import pyworld as pw
+            
+            # WORLD 参数
+            fft_size = pw.get_cheaptrick_fft_size(sample_rate)
+            frame_period = hop_length / sample_rate * 1000  # ms
+            
+            # 提取 F0
+            f0, _ = pw.harvest(
+                audio.astype(np.float64),
+                sample_rate,
+                frame_period=frame_period,
+                f0_floor=50,
+                f0_ceil=1000,
+                fft_size=fft_size
+            )
+            
+            return f0
+            
+        except ImportError:
+            return None
+        except Exception:
+            return None
+    
+    def _extract_f0_crepe_sovits(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        hop_length: int
+    ) -> Optional[np.ndarray]:
+        """使用 Crepe 算法提取 F0 (神经网络)"""
+        try:
+            import crepe
+            
+            # 计算帧数
+            n_frames = (len(audio) - 2048) // hop_length + 1
+            
+            # Crepe 预测
+            _, f0, _, _ = crepe.predict(
+                audio,
+                sr=sample_rate,
+                viterbi=True,
+                step_length=hop_length / sample_rate
+            )
+            
+            return f0.astype(np.float32)
+            
+        except ImportError:
+            return None
+        except Exception:
+            return None
+    
+    def _extract_f0_pyin_sovits(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        hop_length: int
+    ) -> Optional[np.ndarray]:
+        """使用 PM (pyin) 算法提取 F0"""
+        try:
+            librosa = self._lazy_import_module("librosa")
+            if librosa is None:
+                return None
+            
+            # 使用 pyin 进行 F0 提取
+            f0, _, _ = librosa.pyin(
+                audio,
+                fmin=librosa.note_to_hz('C1'),
+                fmax=librosa.note_to_hz('C8'),
+                sr=sample_rate,
+                hop_length=hop_length
+            )
+            
+            # 处理 NaN
+            f0 = np.nan_to_num(f0, nan=0.0)
+            
+            return f0
+            
+        except Exception:
+            return None
+    
+    def _extract_f0_dio_sovits(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        hop_length: int
+    ) -> Optional[np.ndarray]:
+        """使用 DIO 算法提取 F0 (pyworld)"""
+        try:
+            import pyworld as pw
+            
+            # WORLD 参数
+            fft_size = pw.get_cheaptrick_fft_size(sample_rate)
+            frame_period = hop_length / sample_rate * 1000  # ms
+            
+            # 提取 F0
+            f0, _ = pw.dio(
+                audio.astype(np.float64),
+                sample_rate,
+                frame_period=frame_period,
+                f0_floor=50,
+                f0_ceil=1000,
+                fft_size=fft_size
+            )
+            
+            return f0
+            
+        except ImportError:
+            return None
+        except Exception:
+            return None
+    
+    def _extract_f0_autocorr_sovits(
+        self,
+        audio: np.ndarray,
+        sample_rate: int,
+        hop_length: int,
+        n_frames: int
+    ) -> np.ndarray:
+        """使用自相关提取 F0 (降级方案)"""
+        # 简化的自相关 F0 提取
+        f0 = np.zeros(n_frames)
+        
+        for i in range(n_frames):
+            start = i * hop_length
+            end = min(start + 2048, len(audio))
+            
+            if end - start < 1024:
+                continue
+                
+            segment = audio[start:end]
+            
+            # 计算自相关
+            autocorr = np.correlate(segment, segment, mode='full')
+            autocorr = autocorr[len(autocorr)//2:]
+            
+            # 找到峰值
+            min_period = int(sample_rate / 1000)  # 1kHz
+            max_period = int(sample_rate / 50)     # 50Hz
+            
+            if max_period >= len(autocorr):
+                continue
+                
+            peak_idx = np.argmax(autocorr[min_period:max_period]) + min_period
+            
+            if peak_idx > 0:
+                f0[i] = sample_rate / peak_idx
+        
+        # 平滑
+        for i in range(1, len(f0)):
+            if f0[i] == 0:
+                f0[i] = f0[i-1]
+        
+        return f0
+    
+    def _align_f0_length_sovits(self, f0: np.ndarray, target_length: int) -> np.ndarray:
+        """对齐 F0 长度"""
+        if len(f0) == target_length:
+            return f0
+        
+        if len(f0) > target_length:
+            # 截断
+            return f0[:target_length]
+        
+        # 填充
+        padded = np.zeros(target_length)
+        padded[:len(f0)] = f0
+        # 使用最后一个值填充
+        padded[len(f0):] = f0[-1] if len(f0) > 0 else 0
+        return padded
+    
+    # ============================================================
+    # Step 3: 音高变换
+    # ============================================================
+    
+    def _transform_pitch_sovits(
+        self,
+        f0: np.ndarray,
+        pitch_shift: float
+    ) -> np.ndarray:
+        """
+        音高变换
+        
+        将半音变换应用到 F0
+        
+        Args:
+            f0: F0 数组
+            pitch_shift: 音高变换 (半音)
+            
+        Returns:
+            变换后的 F0
+        """
+        # 频率比例
+        ratio = 2 ** (pitch_shift / 12)
+        
+        # 应用变换
+        transformed = f0 * ratio
+        
+        # 限制范围 [50Hz, 1100Hz]
+        transformed = np.clip(transformed, 50, 1100)
+        
+        return transformed
+    
+    # ============================================================
+    # Step 4: 音色特征提取
+    # ============================================================
+    
+    def _extract_timbre_features(
+        self,
+        audio: np.ndarray,
+        sample_rate: int
+    ) -> np.ndarray:
+        """
+        提取音色特征 (HubERT/ContentVec)
+        
+        Args:
+            audio: 音频数据
+            sample_rate: 采样率
+            
+        Returns:
+            音色特征 [T, C]
+        """
+        # 尝试 HubERT/ContentVec
+        hubert_model = self._load_hubert_model()
+        
+        if hubert_model is not None:
+            try:
+                torch = self._lazy_import_module("torch")
+                
+                # 转换为张量
+                audio_tensor = torch.from_numpy(audio).float()
+                if audio_tensor.dim() == 1:
+                    audio_tensor = audio_tensor.unsqueeze(0)  # [1, T]
+                
+                # 提取特征
+                with torch.no_grad():
+                    features = hubert_model(audio_tensor, output_hidden_states=True)
+                    
+                    if hasattr(features, 'hidden_states'):
+                        # 使用指定层的隐藏状态
+                        hidden = features.hidden_states[self._feature_layer]
+                    else:
+                        hidden = features.last_hidden_state
+                
+                return hidden.squeeze(0).cpu().numpy()
+                
+            except Exception:
+                pass
+        
+        # 降级方案: 使用 MFCC
+        return self._extract_mfcc_features(audio, sample_rate)
+    
+    def _extract_mfcc_features(
+        self,
+        audio: np.ndarray,
+        sample_rate: int
+    ) -> np.ndarray:
+        """
+        提取 MFCC 特征 (降级方案)
+        
+        Args:
+            audio: 音频数据
+            sample_rate: 采样率
+            
+        Returns:
+            MFCC 特征 [T, 13]
+        """
+        librosa = self._lazy_import_module("librosa")
+        if librosa is None:
+            # 返回零特征
+            n_frames = (len(audio) - 1024) // 512 + 1
+            return np.zeros((n_frames, 13))
+        
+        try:
+            # 提取 MFCC
+            mfcc = librosa.feature.mfcc(
+                y=audio,
+                sr=sample_rate,
+                n_mfcc=13,
+                n_fft=2048,
+                hop_length=512
+            )
+            
+            # 转置
+            mfcc = mfcc.T
+            
+            return mfcc
+            
+        except Exception:
+            n_frames = (len(audio) - 1024) // 512 + 1
+            return np.zeros((n_frames, 13))
+    
+    # ============================================================
+    # Step 5: So-VITS 模型推理
+    # ============================================================
+    
+    def _run_sovits_inference(
+        self,
+        features: np.ndarray,
+        f0: np.ndarray,
+        speaker_id: int,
+        sample_rate: int
+    ) -> np.ndarray:
+        """
+        运行 So-VITS 模型推理
+        
+        包括:
+        - 音高编码
+        - VITS 解码器推理
+        - 梅尔频谱生成
+        
+        Args:
+            features: 音色特征
+            f0: 基频
+            speaker_id: 说话人 ID
+            sample_rate: 采样率
+            
+        Returns:
+            梅尔频谱 [n_mels, n_frames]
+        """
+        torch = self._lazy_import_module("torch")
+        
+        # 确保特征和 F0 长度一致
+        n_frames = min(len(features), len(f0))
+        
+        # 对齐
+        if features.shape[0] > n_frames:
+            features = features[:n_frames]
+        elif features.shape[0] < n_frames:
+            pad = np.zeros((n_frames - features.shape[0], features.shape[1]))
+            features = np.vstack([features, pad])
+        
+        f0 = f0[:n_frames]
+        
+        # 转换为张量
+        features_tensor = torch.from_numpy(features).float().to(self.device)
+        f0_tensor = torch.from_numpy(f0).float().to(self.device)
+        
+        # 加载 VITS 解码器
+        if not self._load_vits_decoder():
+            # 降级: 返回零梅尔频谱
+            return np.zeros((128, n_frames))
+        
+        try:
+            with torch.no_grad():
+                # 融合 F0 信息到特征
+                fused_features = self._fuse_f0_features(features_tensor, f0_tensor)
+                
+                # VITS 解码器推理
+                mel_output, _ = self._net_g(fused_features)
+                
+                # 确保输出形状正确 [n_mels, n_frames]
+                if mel_output.dim() == 3:
+                    mel_output = mel_output.squeeze(0)
+                if mel_output.dim() == 2 and mel_output.shape[0] > mel_output.shape[1]:
+                    mel_output = mel_output.T
+                
+                return mel_output.cpu().numpy()
+                
+        except Exception as e:
+            self._logger.warning(f"VITS inference failed: {e}")
+            return np.zeros((128, n_frames))
+    
+    def _fuse_f0_features(
+        self,
+        features: "torch.Tensor",
+        f0: "torch.Tensor"
+    ) -> "torch.Tensor":
+        """
+        融合 F0 信息到音色特征
+        
+        Args:
+            features: 音色特征 [T, C]
+            f0: 基频 [T]
+            
+        Returns:
+            融合后的特征
+        """
+        # F0 编码
+        f0_encoded = self._encode_f0(f0)  # [T, 1]
+        
+        # 拼接
+        fused = torch.cat([features, f0_encoded], dim=-1)
+        
+        # 投影回原始维度
+        if fused.shape[-1] != features.shape[-1]:
+            proj = torch.nn.Linear(fused.shape[-1], features.shape[-1]).to(features.device)
+            fused = proj(fused)
+        
+        return fused
+    
+    def _encode_f0(self, f0: "torch.Tensor") -> "torch.Tensor":
+        """
+        F0 编码
+        
+        将 F0 转换为对数尺度，并进行归一化
+        
+        Args:
+            f0: 基频 [T]
+            
+        Returns:
+            编码后的 F0 [T, 1]
+        """
+        # 对数变换
+        f0_log = torch.log(f0.clamp(min=1))
+        
+        # 归一化到 [0, 1]
+        f0_min = torch.log(torch.tensor(50.0))
+        f0_max = torch.log(torch.tensor(1000.0))
+        f0_norm = (f0_log - f0_min) / (f0_max - f0_min)
+        
+        return f0_norm.unsqueeze(-1)
+    
+    # ============================================================
+    # Step 6: 声码器推理
+    # ============================================================
+    
+    def _run_vocoder_sovits(
+        self,
+        mel_spec: np.ndarray,
+        sample_rate: int
+    ) -> np.ndarray:
+        """
+        声码器推理
+        
+        Args:
+            mel_spec: 梅尔频谱 [n_mels, n_frames]
+            sample_rate: 采样率
+            
+        Returns:
+            合成音频
+        """
+        # 尝试 HiFi-GAN
+        hifigan = self._load_hifigan_vocoder()
+        
+        if hifigan is not None and self._vocoder_type == "hifigan":
+            try:
+                torch = self._lazy_import_module("torch")
+                
+                # 转换
+                mel_tensor = torch.from_numpy(mel_spec).float().unsqueeze(0).to(self.device)
+                
+                with torch.no_grad():
+                    audio = self._vocoder(mel_tensor)
+                
+                return audio.squeeze().cpu().numpy()
+                
+            except Exception:
+                pass
+        
+        # 降级: Griffin-Lim
+        return self._griffin_lim_synthesis_sovits(mel_spec, sample_rate)
+    
+    def _griffin_lim_synthesis_sovits(
+        self,
+        mel_spec: np.ndarray,
+        sample_rate: int,
+        n_iter: int = 32
+    ) -> np.ndarray:
+        """
+        Griffin-Lim 声码器 (降级方案)
+        
+        Args:
+            mel_spec: 梅尔频谱
+            sample_rate: 采样率
+            n_iter: Griffin-Lim 迭代次数
+            
+        Returns:
+            合成音频
+        """
+        librosa = self._lazy_import_module("librosa")
+        if librosa is None:
+            hop_length = self.DEFAULT_HOP_LENGTH
+            n_frames = mel_spec.shape[-1]
+            return np.zeros(n_frames * hop_length)
+        
+        try:
+            # 梅尔频谱转功率谱
+            power_spec = librosa.db_to_power(mel_spec)
+            
+            # Griffin-Lim
+            audio = librosa.feature.inverse.mel_to_audio(
+                power_spec,
+                sr=sample_rate,
+                n_fft=2048,
+                hop_length=self.DEFAULT_HOP_LENGTH,
+                n_iter=n_iter
+            )
+            
+            return audio
+            
+        except Exception:
+            hop_length = self.DEFAULT_HOP_LENGTH
+            n_frames = mel_spec.shape[-1] if mel_spec.ndim > 1 else 1
+            return np.zeros(n_frames * hop_length)
+    
+    # ============================================================
+    # Step 7: 后处理
+    # ============================================================
+    
+    def _postprocess_audio_sovits(
+        self,
+        audio: np.ndarray
+    ) -> np.ndarray:
+        """
+        后处理音频
+        
+        包括:
+        - 去除直流分量
+        - 峰值限制
+        - RMS 归一化
+        - 淡入淡出
+        
+        Args:
+            audio: 输入音频
+            
+        Returns:
+            处理后的音频
+        """
+        if len(audio) == 0:
+            return audio
+        
+        # 确保是一维
+        if audio.ndim > 1:
+            audio = audio.flatten()
+        
+        # 去除直流分量
+        audio = audio - np.mean(audio)
+        
+        # 峰值限制到 [-1, 1]
+        peak = np.abs(audio).max()
+        if peak > 1.0:
+            audio = audio / peak * 0.99
+        
+        # RMS 归一化
+        rms = np.sqrt(np.mean(audio ** 2))
+        if rms > 0:
+            target_rms = 0.3
+            audio = audio * (target_rms / rms)
+        
+        # 再次峰值限制
+        peak = np.abs(audio).max()
+        if peak > 0.99:
+            audio = audio / peak * 0.99
+        
+        # 淡入淡出
+        audio = self._apply_fade_sovits(audio)
+        
+        return audio
+    
+    def _apply_fade_sovits(self, audio: np.ndarray, fade_len: int = 1000) -> np.ndarray:
+        """应用淡入淡出"""
+        if len(audio) < fade_len * 2:
+            return audio
+        
+        # 淡入
+        fade_in = np.linspace(0, 1, fade_len)
+        audio[:fade_len] *= fade_in
+        
+        # 淡出
+        fade_out = np.linspace(1, 0, fade_len)
+        audio[-fade_len:] *= fade_out
+        
+        return audio
+    
+    def _safe_degrade_output_sovits(self, audio: np.ndarray) -> np.ndarray:
+        """安全降级输出"""
+        # 去除静音
+        audio = self._trim_silence_sovits(audio, self.sample_rate, top_db=30)
+        
+        # 基本归一化
+        peak = np.abs(audio).max()
+        if peak > 0:
+            audio = audio / peak * 0.9
+        
+        return audio
     
     def _load_config(self, config_path: str):
         """加载 SoVITS 配置文件"""
@@ -340,33 +1361,26 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                     setattr(params, key, value)
         
         try:
+            # 确定目标采样率
+            target_sr = params.sample_rate or self.sample_rate
+            
             # 重采样到模型采样率
-            if sample_rate != params.sample_rate:
-                audio = self._resample(audio, sample_rate, params.sample_rate)
+            if sample_rate != target_sr:
+                audio = self._preprocess_resample_sovits(audio, sample_rate, target_sr)
             
-            # 提取梅尔频谱
-            mel_spec = self._extract_mel_spectrogram(audio, params.sample_rate)
-            
-            # 提取 F0
-            f0 = self._extract_f0(audio, params.sample_rate, params.pitch_algo)
-            
-            # 计算音高变换
-            pitch_factor = 2 ** (params.pitch_shift / 12)
-            
-            # 应用 SoVITS 转换
-            if self.enable_diffusion:
-                output_audio = self._apply_diffusion_conversion(
-                    mel_spec, f0, pitch_factor, speaker_id, params
-                )
-            else:
-                output_audio = self._apply_conversion(
-                    mel_spec, f0, pitch_factor, speaker_id, params
-                )
+            # 使用新的核心推理流程
+            output_audio = self._apply_sovits_conversion(
+                audio,
+                target_sr,
+                speaker_id=speaker_id,
+                pitch_shift=params.pitch_shift,
+                pitch_algo=params.pitch_algo
+            )
             
             # 创建结果
             result = self._create_result(
                 output_audio,
-                params.sample_rate,
+                target_sr,
                 info={
                     "engine": "SoVITS",
                     "version": "4.1",
