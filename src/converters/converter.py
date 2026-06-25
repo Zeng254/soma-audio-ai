@@ -9,11 +9,14 @@ from pathlib import Path
 from typing import Optional, Union, List
 import numpy as np
 
+<<<<<<< HEAD
 import logging
 import ffmpeg
 
 logger = logging.getLogger(__name__)
 
+=======
+>>>>>>> 551e0cf (fix: resolve 8th round code review issues)
 
 class ConversionFormat(Enum):
     """Supported audio formats"""
@@ -79,6 +82,14 @@ class AudioConverter:
             ffmpeg_path: FFmpeg executable file path
         """
         self.ffmpeg_path = ffmpeg_path
+        self._ffmpeg = None
+    
+    def _get_ffmpeg(self):
+        """Lazy import ffmpeg module"""
+        if self._ffmpeg is None:
+            import ffmpeg
+            self._ffmpeg = ffmpeg
+        return self._ffmpeg
     
     def convert(
         self,
@@ -111,6 +122,7 @@ class AudioConverter:
         if output_format is None:
             output_format = Path(output_path).suffix[1:].lower()
         
+        ffmpeg = self._get_ffmpeg()
         try:
             # Build FFmpeg command
             stream = ffmpeg.input(input_path)
@@ -207,6 +219,7 @@ class AudioConverter:
         Returns:
             AudioMetadata: Metadata object
         """
+        ffmpeg = self._get_ffmpeg()
         try:
             probe = ffmpeg.probe(file_path, cmd=self.ffmpeg_path)
             audio_stream = next(
@@ -285,6 +298,7 @@ class AudioConverter:
         Returns:
             bool: Whether succeeded
         """
+        ffmpeg = self._get_ffmpeg()
         try:
             stream = ffmpeg.input(input_path)
             
@@ -325,6 +339,7 @@ class AudioConverter:
         Returns:
             bool: Whether succeeded
         """
+        ffmpeg = self._get_ffmpeg()
         try:
             if end_time:
                 stream = ffmpeg.input(input_path, ss=start_time, to=end_time)
@@ -360,6 +375,7 @@ class AudioConverter:
         if not input_files:
             return False
         
+        ffmpeg = self._get_ffmpeg()
         try:
             if len(input_files) == 1:
                 # Single file, just copy

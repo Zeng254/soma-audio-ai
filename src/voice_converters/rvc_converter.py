@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from src.voice_converters.base import BaseVoiceConverter, ConversionResult
-from src.voice_converters.base import ConversionParams, EngineCapability
+from src.voice_converters.base import ConversionParams, EngineCapability, ModelInfo, ConverterType
 from src.exceptions import SOMAModelError, SOMAValidationError, SOMAConversionError
 from src.voice_converters.rvc_models import SimpleRVCModel, create_rvc_model_from_checkpoint
 
@@ -186,6 +186,18 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
                     self._has_torchaudio = False
                     return None
             return self._torchaudio
+        elif name == "crepe":
+            if not hasattr(self, '_crepe'):
+                self._crepe = None
+            if self._crepe is None:
+                try:
+                    import crepe
+                    self._crepe = crepe
+                    self._has_crepe = True
+                except ImportError:
+                    self._has_crepe = False
+                    return None
+            return self._crepe
         return None
 
     @classmethod
@@ -213,7 +225,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         config_path: Optional[Union[str, Path]] = None,
         index_path: Optional[Union[str, Path]] = None,
         device: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> ModelInfo:
         """
         Load RVC Model
 
@@ -224,7 +236,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             device: Run device
 
         Returns:
-            ModelInfoDictionary
+            ModelInfo: Model information object
         """
         if device:
             self.device = device
@@ -279,14 +291,18 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             self._is_loaded = True
             self._model_path = model_path
 
-            return {
-                "status": "loaded",
-                "model_path": str(model_path),
-                "config_path": str(config_path) if config_path else None,
-                "index_path": str(index_path) if index_path else None,
-                "sample_rate": self.sample_rate,
-                "hop_length": self.hop_length,
-            }
+            return ModelInfo(
+                name=model_path.stem,
+                type=ConverterType.RVC,
+                version=None,
+                sample_rate=self.sample_rate,
+                description="RVC voice conversion model",
+                file_path=str(model_path),
+                config_path=str(config_path) if config_path else None,
+                index_path=str(index_path) if index_path else None,
+                is_loaded=True,
+                memory_usage=None,
+            )
 
         except Exception as e:
             self.unload()
@@ -669,14 +685,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         n_frames: int
     ) -> np.ndarray:
         """Simple autocorrelation F0 extraction (downgrade method)"""
-        torch = self._lazy_import_module("torch")
-        if torch is None:
-            return np.zeros(n_frames)
-
-        # Convert to Tensor
-        audio_tensor = torch.from_numpy(audio).float()
-
-        # Simplified F0 extraction
+        # Use pure numpy, no torch needed
         f0 = np.zeros(n_frames)
         frame_length = 2048
 
@@ -686,7 +695,7 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             if end > len(audio):
                 break
 
-            frame = audio_tensor[start:end].numpy()
+            frame = audio[start:end]
 
             # Autocorrelation
             autocorr = np.correlate(frame, frame, mode='full')

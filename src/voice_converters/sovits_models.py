@@ -50,10 +50,11 @@ class ResidualBlock(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
         for conv in self.convs:
             x = F.leaky_relu(x, 0.1)
             x = conv(x)
-        return x
+        return x + residual
 
 
 class TextEncoder(nn.Module):

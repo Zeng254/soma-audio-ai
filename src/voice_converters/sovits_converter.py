@@ -110,6 +110,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         self._vits_model = None       # VITS main model (SimpleVITSModel)
         self._diffusion_model = None  # Diffusion model (optional)
         self._speaker_map = {}       # Speaker mapping
+        self._current_speaker_id = 0  # Current speaker ID
         self._state_dict = None      # ModelWeight
         
         # Audio processing components
@@ -415,18 +416,15 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                 try:
                     from hifigan.models import Generator as HifiganGenerator
                     
-                    # Create HiFi-GAN generator
+                    # Create HiFi-GAN generator with proper parameters
                     self._vocoder = HifiganGenerator(
-                        torch.nn.Conv1d(128, 32, 7, padding=3),
-                        torch.nn.ModuleList([
-                            torch.nn.Sequential(
-                                torch.nn.LeakyReLU(0.2),
-                                torch.nn.Conv1d(32, 32, 15, padding=7),
-                                torch.nn.LeakyReLU(0.2),
-                                torch.nn.Conv1d(32, 32, 15, padding=7),
-                            ) for _ in range(4)
-                        ]),
-                        torch.nn.Conv1d(32, 1, 7, padding=3),
+                        in_channels=128,
+                        out_channels=1,
+                        upsample_rates=[8, 8, 2, 2],
+                        upsample_kernel_sizes=[16, 16, 4, 4],
+                        upsample_initial_channel=512,
+                        resblock_kernel_sizes=[3, 7, 11],
+                        resblock_dilation_sizes=[[1, 3, 5], [1, 3, 5], [1, 3, 5]],
                     )
                     self._vocoder_type = "hifigan"
                     
@@ -1453,7 +1451,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             hop_length = self._hps.get("audio", {}).get("hop_length", 512) if self._hps else 512
             
             if method == "pm":
-                f0, voiced_flag = librosa.pyin(
+                f0, voiced_flag, _voiced_probs = librosa.pyin(
                     audio,
                     fmin=librosa.note_to_hz('C1'),
                     fmax=librosa.note_to_hz('C7'),
@@ -1462,15 +1460,16 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                     hop_length=hop_length,
                 )
             elif method == "dio":
-                f0, voiced_flag = librosa.yin(
+                f0 = librosa.yin(
                     audio,
                     fmin=librosa.note_to_hz('C1'),
                     fmax=librosa.note_to_hz('C7'),
                     sr=sample_rate,
                     hop_length=hop_length,
                 )
+                voiced_flag = None
             else:
-                f0, voiced_flag = librosa.pyin(
+                f0, voiced_flag, _voiced_probs = librosa.pyin(
                     audio,
                     fmin=librosa.note_to_hz('C1'),
                     fmax=librosa.note_to_hz('C7'),
@@ -1566,7 +1565,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
                 )
             except Exception:
                 # Full downgrade: use Griffin-Lim
-                output_audio = self._griffin_lim_synthesis(mel_spec, model_sr)
+                output_audio = self._griffin_lim_synthesis_sovits(mel_spec, model_sr)
 
         # Ensure output is 1D array
         if len(output_audio.shape) > 1:

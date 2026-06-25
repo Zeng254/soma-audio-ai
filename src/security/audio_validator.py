@@ -104,9 +104,9 @@ class AudioValidator:
 
         result = validator.validate("/path/to/audio.wav")
         if result.is_valid:
-            print(f"Sample rate: {result.metadata.sample_rate}")
+            logger.info(f"Sample rate: {result.metadata.sample_rate}")
         else:
-            print(f"ValidateFail: {result.errors}")
+            logger.error(f"Validation failed: {result.errors}")
     """
 
     # Common audio file magic numbers
@@ -430,7 +430,7 @@ def validate_audio(
     Example:
         result = validate_audio("/path/to/audio.wav")
         if result.is_valid:
-            print(f"Audio valid, sample rate: {result.metadata.sample_rate}")
+            logger.info(f"Audio valid, sample rate: {result.metadata.sample_rate}")
     """
     # Create new validator instance each time to avoid thread safety issues
     validator = AudioValidator(max_duration=max_duration)
