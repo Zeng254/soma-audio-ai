@@ -7,7 +7,10 @@ from typing import Any, List, Optional, Tuple, Union
 from pathlib import Path
 import numpy as np
 
+import logging
 from src.exceptions import SOMAError
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationError(SOMAError):
@@ -95,7 +98,7 @@ class AudioValidator:
         
         if sample_rate not in cls.VALID_SAMPLE_RATES:
             # Warning but do not raise error
-            print(f"Warning: Non-standard sample rate {sample_rate}Hz")
+            logger.warning(f"Non-standard sample rate {sample_rate}Hz")
         
         return sample_rate
     

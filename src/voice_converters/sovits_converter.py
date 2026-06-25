@@ -1776,7 +1776,7 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             steps: diffusion steps
         """
         if enable and self._diffusion_model is None:
-            print("Warning: Diffusion model not loaded. Diffusion disabled.")
+            logger.warning("Diffusion model not loaded. Diffusion disabled.")
             return
         
         self.enable_diffusion = enable

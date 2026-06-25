@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Optional, Union, List
 import numpy as np
 
+import logging
 import ffmpeg
+
+logger = logging.getLogger(__name__)
 
 
 class ConversionFormat(Enum):
@@ -150,7 +153,7 @@ class AudioConverter:
             return True
             
         except ffmpeg.Error as e:
-            print(f"FFmpeg error: {e.stderr.decode()}")
+            logger.error(f"FFmpeg error: {e.stderr.decode()}")
             return False
     
     def convert_array(
@@ -188,10 +191,10 @@ class AudioConverter:
             return True
             
         except ImportError:
-            print("soundfile not installed. Use convert() for file conversion.")
+            logger.warning("soundfile not installed. Use convert() for file conversion.")
             return False
         except Exception as e:
-            print(f"Error writing audio: {e}")
+            logger.error(f"Error writing audio: {e}")
             return False
     
     def get_metadata(self, file_path: str) -> Optional[AudioMetadata]:

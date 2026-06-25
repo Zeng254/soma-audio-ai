@@ -133,9 +133,16 @@ class BaseSeparator(ABC):
         if audio.ndim == 1:
             audio = audio[np.newaxis, :]
         elif audio.ndim == 2:
-            # Ensure format is (channels, samples)
-            if audio.shape[0] < audio.shape[1]:
+            # Detect format: if first dim is small (<=8), likely channel_first
+            # If second dim is small (<=8), likely channel_last
+            dim0, dim1 = audio.shape
+            if dim0 <= 8 and dim1 > dim0 * 2:
+                # Already channel_first (channels, samples)
+                pass
+            elif dim1 <= 8 and dim0 > dim1 * 2:
+                # Channel_last (samples, channels), transpose
                 audio = audio.T
+            # Otherwise assume channel_first
         else:
             raise ValueError(f"Invalid audio shape: {audio.shape}")
         

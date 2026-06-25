@@ -149,12 +149,14 @@ class Reverb(BaseEffect):
         self.sample_rate = sample_rate
         
         # UpdateParameter
-        for key in ["room_size", "damping", "wet_level", "dry_level", "width", "reverb_type"]:
+        for key in ["room_size", "damping", "wet_level", "dry_level", "width"]:
             if key in kwargs:
                 setattr(self, key, kwargs[key])
         
-        # Adjust based on class type
-        self._adjust_for_type()
+        # Handle reverb_type change
+        if "reverb_type" in kwargs:
+            self.reverb_type = kwargs["reverb_type"]
+            self._adjust_for_type()
         
         # Reinitialize buffer (e.g. if sample rate changes)
         if self._comb_buffers is None or len(self._comb_buffers[0]) != int(self.COMB_DELAYS[0] * sample_rate / 44100):
