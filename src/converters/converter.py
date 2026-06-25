@@ -8,15 +8,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Union, List
 import numpy as np
-
-<<<<<<< HEAD
 import logging
-import ffmpeg
 
 logger = logging.getLogger(__name__)
-
-=======
->>>>>>> 551e0cf (fix: resolve 8th round code review issues)
 
 class ConversionFormat(Enum):
     """Supported audio formats"""
