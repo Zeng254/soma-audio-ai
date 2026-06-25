@@ -200,3 +200,7 @@ def mock_model_file(temp_model_dir):
     file_path = temp_model_dir / "model.pth"
     torch.save({"model": torch.randn(10, 10)}, str(file_path))
     return file_path
+
+
+# 别名
+temp_model_file = mock_model_file

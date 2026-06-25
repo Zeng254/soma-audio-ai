@@ -139,7 +139,12 @@ class SafeModelLoader:
             ModelSecurityError: 安全检查失败
             ModelVerificationError: 验证失败
         """
-        model_path = safe_path(model_path)
+        try:
+            model_path = safe_path(model_path)
+        except Exception as e:
+            if "路径不在允许的目录范围内" in str(e) or "不存在" in str(e):
+                raise ModelLoadError(f"模型路径不安全: {model_path}") from e
+            raise
 
         # 1. 验证文件存在
         if not model_path.exists():

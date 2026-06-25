@@ -545,3 +545,182 @@ def validate(value: Any, rules: dict) -> Tuple[bool, Optional[str]]:
         
     except Exception as e:
         return False, str(e)
+
+
+# =============================================================================
+# 便捷独立函数 - 测试和外部调用使用
+# =============================================================================
+
+def validate_sample_rate(sample_rate: Union[int, str]) -> int:
+    """
+    验证采样率
+    
+    Args:
+        sample_rate: 采样率值
+        
+    Returns:
+        验证通过的采样率（整数）
+        
+    Raises:
+        ValidationError: 采样率无效
+    """
+    # 处理字符串输入
+    if isinstance(sample_rate, str):
+        try:
+            sample_rate = int(sample_rate)
+        except ValueError:
+            raise ValidationError(f"Invalid sample rate: {sample_rate}")
+    
+    if not isinstance(sample_rate, int):
+        raise ValidationError(f"Sample rate must be an integer, got {type(sample_rate).__name__}")
+    
+    if sample_rate < 8000:
+        raise ValidationError(f"Sample rate too low: {sample_rate} (min: 8000)")
+    
+    if sample_rate > 192000:
+        raise ValidationError(f"Sample rate too high: {sample_rate} (max: 192000)")
+    
+    return sample_rate
+
+
+def validate_pitch_shift(semitones: int) -> int:
+    """
+    验证音调偏移值
+    
+    Args:
+        semitones: 半音数偏移
+        
+    Returns:
+        验证通过的偏移值
+        
+    Raises:
+        ValidationError: 偏移值超出范围
+    """
+    if not isinstance(semitones, int):
+        raise ValidationError(f"Pitch shift must be an integer, got {type(semitones).__name__}")
+    
+    if semitones < -24 or semitones > 24:
+        raise ValidationError(f"Pitch shift out of range: {semitones} (valid: -24 to 24)")
+    
+    return semitones
+
+
+def validate_duration(duration: float) -> float:
+    """
+    验证音频时长
+    
+    Args:
+        duration: 时长（秒）
+        
+    Returns:
+        验证通过的时长
+        
+    Raises:
+        ValidationError: 时长无效
+    """
+    if not isinstance(duration, (int, float)):
+        raise ValidationError(f"Duration must be a number, got {type(duration).__name__}")
+    
+    duration = float(duration)
+    
+    if duration <= 0:
+        raise ValidationError(f"Duration must be positive: {duration}")
+    
+    return duration
+
+
+def validate_model_path(path: str) -> str:
+    """
+    验证模型文件路径
+    
+    Args:
+        path: 模型文件路径
+        
+    Returns:
+        验证通过的路径
+        
+    Raises:
+        ValidationError: 路径无效或扩展名不支持
+    """
+    SUPPORTED_EXTENSIONS = {'.pth', '.pt', '.onnx', '.pkl', '.joblib'}
+    
+    if not path or not isinstance(path, str):
+        raise ValidationError("Model path must be a non-empty string")
+    
+    path_obj = Path(path)
+    ext = path_obj.suffix.lower()
+    
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise ValidationError(
+            f"Unsupported model extension: {ext}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
+        )
+    
+    return path
+
+
+def validate_audio_format(fmt: str) -> str:
+    """
+    验证音频格式
+    
+    Args:
+        fmt: 音频格式字符串
+        
+    Returns:
+        格式的大写形式
+        
+    Raises:
+        ValidationError: 格式不支持
+    """
+    if not fmt or not isinstance(fmt, str):
+        raise ValidationError("Audio format must be a non-empty string")
+    
+    fmt_lower = fmt.lower().strip().lstrip('.')
+    valid_formats = {"wav", "mp3", "flac", "ogg", "m4a"}
+    
+    if fmt_lower not in valid_formats:
+        raise ValidationError(
+            f"Unsupported audio format: {fmt}. "
+            f"Supported: {', '.join(sorted(valid_formats))}"
+        )
+    
+    return fmt_lower.upper()
+
+
+def validate_float(
+    value: Union[int, float, str],
+    min_val: Optional[float] = None,
+    max_val: Optional[float] = None
+) -> float:
+    """
+    验证浮点数值
+    
+    Args:
+        value: 待验证的值
+        min_val: 最小值
+        max_val: 最大值
+        
+    Returns:
+        验证通过的浮点数值
+        
+    Raises:
+        ValidationError: 值无效或超出范围
+    """
+    if isinstance(value, str):
+        try:
+            value = float(value)
+        except ValueError:
+            raise ValidationError(f"Invalid float value: {value}")
+    
+    if not isinstance(value, (int, float)):
+        raise ValidationError(f"Value must be numeric, got {type(value).__name__}")
+    
+    value = float(value)
+    
+    if min_val is not None and value < min_val:
+        raise ValidationError(f"Value {value} is less than minimum {min_val}")
+    
+    if max_val is not None and value > max_val:
+        raise ValidationError(f"Value {value} is greater than maximum {max_val}")
+    
+    return value

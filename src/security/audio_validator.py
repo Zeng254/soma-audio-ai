@@ -185,11 +185,22 @@ class AudioValidator:
             AudioValidationResult 验证结果
         """
         result = AudioValidationResult(is_valid=False)
-        path = safe_path(path)
-
+        
+        # 0. 先转换为 Path 对象，检查文件是否存在
+        # 不存在的文件返回 is_valid=False，而不是抛出异常
+        if isinstance(path, str):
+            path = Path(path)
+        
         # 1. 检查文件是否存在
         if not path.exists():
             result.errors.append(f"文件不存在: {path}")
+            return result
+        
+        # 2. 检查路径安全性（仅对存在的文件）
+        try:
+            path = safe_path(path)
+        except Exception as e:
+            result.errors.append(f"路径安全检查失败: {str(e)}")
             return result
 
         # 2. 检查文件大小
