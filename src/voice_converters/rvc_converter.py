@@ -23,6 +23,7 @@ import numpy as np
 
 from src.voice_converters.base import BaseVoiceConverter, ConversionResult
 from src.voice_converters.base import ConversionParams, EngineCapability
+from src.voice_converters.rvc_models import SimpleRVCModel, create_rvc_model_from_checkpoint
 
 
 class RVCConverter(BaseVoiceConverter, EngineCapability):
@@ -86,7 +87,8 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         self._torchaudio: Any = None
 
         # 模型组件 (惰性加载)
-        self._model: Any = None  # RVC 主生成器 (net_g)
+        self._model: Any = None  # RVC 主生成器 (兼容性别名)
+        self._rvc_model: Any = None  # RVC 主生成器 (SimpleRVCModel)
         self._hubert_model: Any = None
         self._hifigan_model: Any = None
         self._pe_model: Any = None
@@ -212,29 +214,32 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
                 weights_only=False
             )
 
-            # 解析 RVC 模型格式
+            # 提取模型配置
             if isinstance(checkpoint, dict):
-                # RVC v2 格式
-                if "model" in checkpoint:
-                    self._model = checkpoint["model"]
-                elif "weight" in checkpoint:
-                    self._model = checkpoint["weight"]
-                else:
-                    self._model = checkpoint
-
-                # 提取模型配置
                 self._config = checkpoint.get("config", {})
                 self.sample_rate = self._config.get("sample_rate", self.DEFAULT_SAMPLE_RATE)
                 self.hop_length = self._config.get("hop_length", self.DEFAULT_HOP_LENGTH)
+            else:
+                self._config = {}
+                self.sample_rate = self.DEFAULT_SAMPLE_RATE
+                self.hop_length = self.DEFAULT_HOP_LENGTH
 
-                # 加载声码器 (HiFi-GAN)
+            # 创建并加载 RVC 模型
+            self._rvc_model = create_rvc_model_from_checkpoint(checkpoint, self._config)
+            self._rvc_model.to(self.device)
+            self._rvc_model.eval()
+
+            # 标记旧属性以保持兼容性
+            self._model = self._rvc_model
+
+            # 加载声码器 (HiFi-GAN)
+            if isinstance(checkpoint, dict):
                 if "vocoder" in checkpoint:
                     self._hifigan_model = checkpoint["vocoder"]
                 elif "generator" in checkpoint:
                     self._hifigan_model = checkpoint["generator"]
             else:
-                self._model = checkpoint
-                self._config = {}
+                self._hifigan_model = None
 
             self._is_loaded = True
             self._model_path = model_path
@@ -254,7 +259,8 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
 
     def unload(self):
         """卸载模型，释放内存"""
-        self._model = None
+        self._rvc_model = None  # RVC 主模型
+        self._model = None      # 兼容性别名
         self._hifigan_model = None
         self._hubert_model = None
         self._pe_model = None
@@ -893,44 +899,51 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         """
         torch = self._lazy_import_module("torch")
 
-        if self._model is None:
-            # 无模型，返回零频谱
-            n_frames = features.shape[1]
+        # 无模型，使用降级合成
+        if self._rvc_model is None and self._model is None:
+            n_frames = features.shape[1] if hasattr(features, 'shape') else len(f0)
             return np.random.randn(128, n_frames).astype(np.float32) * 0.1
 
-        # 转换输入
+        # 转换输入为张量
         if isinstance(features, np.ndarray):
-            features = torch.from_numpy(features).float()
+            features_tensor = torch.from_numpy(features).float().to(self.device)
+        else:
+            features_tensor = features
+
         if isinstance(f0, np.ndarray):
-            f0_tensor = torch.from_numpy(f0).float().unsqueeze(-1)
+            f0_tensor = torch.from_numpy(f0).float().to(self.device)
         else:
             f0_tensor = f0
 
-        # F0 编码
-        f0_encoded = self._encode_f0_pitch(f0_tensor, sample_rate)
+        # 调整维度
+        if len(f0_tensor.shape) == 1:
+            f0_tensor = f0_tensor.unsqueeze(0)  # [n_frames] -> [1, n_frames]
+        if len(features_tensor.shape) == 2:
+            features_tensor = features_tensor.unsqueeze(0)  # [C, T] -> [1, C, T]
 
-        # 尝试使用模型推理
+        # 使用 RVC 模型推理
         try:
             with torch.no_grad():
-                # 特征和 F0 融合
-                combined = torch.cat([features, f0_encoded], dim=0).unsqueeze(0)
-
-                # 模型推理
-                if hasattr(self._model, 'forward'):
-                    output = self._model.forward(combined)
-                elif hasattr(self._model, '__call__'):
-                    output = self._model(combined)
+                # 尝试使用新的 RVC 模型接口
+                if self._rvc_model is not None:
+                    output = self._rvc_model.inference(features_tensor, f0_tensor)
+                elif hasattr(self._model, 'inference'):
+                    output = self._model.inference(features_tensor, f0_tensor)
+                elif hasattr(self._model, 'forward'):
+                    # 兼容旧的直接调用方式
+                    output = self._model.forward(features_tensor, f0_tensor)
                 else:
-                    output = self._fallback_synthesis(features, f0_encoded)
+                    # 尝试通用调用方式
+                    output = self._model(features_tensor, f0_tensor)
 
                 if isinstance(output, torch.Tensor):
                     return output.squeeze(0).cpu().numpy()
                 else:
-                    return self._fallback_synthesis(features, f0_encoded)
+                    return self._fallback_synthesis(features, f0)
 
         except Exception as e:
             self._logger.debug(f"Model inference failed: {e}")
-            return self._fallback_synthesis(features, f0_encoded)
+            return self._fallback_synthesis(features, f0)
 
     def _encode_f0_pitch(
         self,

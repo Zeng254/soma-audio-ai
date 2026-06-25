@@ -25,6 +25,7 @@ from .base import (
     LazyImportMixin,
     EngineCapability,
 )
+from .sovits_models import SimpleVITSModel, create_vits_model_from_checkpoint
 
 
 class SoVITSDependencyError(ImportError):
@@ -104,7 +105,8 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         
         # SoVITS 组件
         self._hps = None              # 超参数
-        self._net_g = None           # 生成器网络 (VITS 解码器)
+        self._net_g = None           # 生成器网络 (VITS 解码器, 兼容性别名)
+        self._vits_model = None       # VITS 主模型 (SimpleVITSModel)
         self._diffusion_model = None  # 扩散模型 (可选)
         self._speaker_map = {}       # 说话人映射
         self._state_dict = None      # 模型权重
@@ -1270,28 +1272,24 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
     def _load_generator(self, model_path: str, **kwargs):
         """加载生成器模型"""
         torch = self._lazy_import_module("torch")
-        
+
         # 加载权重
-        checkpoint = torch.load(model_path, map_location="cpu")
-        
-        if isinstance(checkpoint, dict):
-            if "model" in checkpoint:
-                state_dict = checkpoint["model"]
-            elif "state_dict" in checkpoint:
-                state_dict = checkpoint["state_dict"]
-            else:
-                state_dict = checkpoint
-        else:
-            state_dict = checkpoint
-        
-        # TODO: 实例化生成器网络
-        # 这里需要根据 config 创建网络结构
-        # from .sovits_models import Generator
-        # self._net_g = Generator(self.config)
-        # self._net_g.load_state_dict(state_dict)
-        
-        # 简化: 存储权重
-        self._state_dict = state_dict
+        try:
+            checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        except Exception as e:
+            raise ValueError(f"Failed to load model checkpoint: {e}")
+
+        # 从检查点创建 VITS 模型
+        self._vits_model = create_vits_model_from_checkpoint(checkpoint, self._hps)
+
+        # 移动到设备
+        if self.device != "cpu":
+            self._vits_model.to(self.device)
+
+        self._vits_model.eval()
+
+        # 兼容性别名
+        self._net_g = self._vits_model
     
     def _load_diffusion_model(
         self,
@@ -1527,43 +1525,73 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         4. 声码器合成
         """
         torch = self._lazy_import_module("torch")
-        
-        # 确保音频是一维的
-        if len(mel_spec.shape) > 1:
-            mel_spec_tensor = torch.from_numpy(mel_spec).float()
+
+        # 转换输入为张量
+        if isinstance(mel_spec, np.ndarray):
+            mel_spec_tensor = torch.from_numpy(mel_spec).float().to(self.device)
         else:
-            mel_spec_tensor = torch.from_numpy(mel_spec).unsqueeze(0)
-        
-        # 转换 F0 为张量
-        f0_tensor = torch.from_numpy(f0).float()
-        
+            mel_spec_tensor = mel_spec
+
+        if isinstance(f0, np.ndarray):
+            f0_tensor = torch.from_numpy(f0).float().to(self.device)
+        else:
+            f0_tensor = f0
+
+        # 确保维度正确
+        if len(mel_spec_tensor.shape) == 2:
+            mel_spec_tensor = mel_spec_tensor.unsqueeze(0)  # [C, T] -> [1, C, T]
+        if len(f0_tensor.shape) == 1:
+            f0_tensor = f0_tensor.unsqueeze(0)  # [T] -> [1, T]
+
         # 应用音高变换
         if params.pitch_shift != 0:
             transformed_f0 = f0_tensor * pitch_factor
         else:
             transformed_f0 = f0_tensor
-        
+
         # 限制范围
         transformed_f0 = torch.clamp(transformed_f0, 20, 2000)
-        
+
         # 获取模型采样率
         model_sr = params.sample_rate or self.sample_rate
-        
-        # 尝试使用 HiFi-GAN 声码器
+
+        # 尝试使用 VITS 模型推理
         try:
-            output_audio = self._synthesize_with_vocoder(
-                mel_spec_tensor.unsqueeze(0),  # 添加 batch 维度
-                transformed_f0.unsqueeze(0),
-                model_sr
-            )
-        except Exception:
-            # 声码器合成失败，使用 Griffin-Lim
-            output_audio = self._griffin_lim_synthesis(mel_spec, model_sr)
-        
+            with torch.no_grad():
+                if self._vits_model is not None:
+                    # 使用 VITS 模型生成音频
+                    output_audio = self._vits_model.inference(
+                        mel_spec_tensor,
+                        transformed_f0,
+                        speaker_ids=None
+                    )
+                elif self._net_g is not None:
+                    # 兼容旧接口
+                    output_audio = self._net_g(mel_spec_tensor, transformed_f0)
+                else:
+                    raise ValueError("No VITS model loaded")
+
+                # 转换为 numpy
+                if isinstance(output_audio, torch.Tensor):
+                    output_audio = output_audio.cpu().numpy()
+
+        except Exception as e:
+            self._logger.debug(f"VITS inference failed: {e}")
+            # 降级使用声码器
+            try:
+                output_audio = self._synthesize_with_vocoder(
+                    mel_spec_tensor,
+                    transformed_f0,
+                    model_sr
+                )
+            except Exception:
+                # 完全降级：使用 Griffin-Lim
+                output_audio = self._griffin_lim_synthesis(mel_spec, model_sr)
+
         # 确保输出是一维数组
         if len(output_audio.shape) > 1:
             output_audio = output_audio.flatten()
-        
+
         return output_audio
     
     def _synthesize_with_vocoder(
