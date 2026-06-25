@@ -22,10 +22,10 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from src.voice_converters.base import BaseVoiceConverter, ConversionResult
-from src.voice_converters.base import ConversionParams
+from src.voice_converters.base import ConversionParams, EngineCapability
 
 
-class RVCConverter(BaseVoiceConverter):
+class RVCConverter(BaseVoiceConverter, EngineCapability):
     """
     RVC 声音转换器
 
@@ -86,6 +86,7 @@ class RVCConverter(BaseVoiceConverter):
         self._torchaudio: Any = None
 
         # 模型组件 (惰性加载)
+        self._model: Any = None  # RVC 主生成器 (net_g)
         self._hubert_model: Any = None
         self._hifigan_model: Any = None
         self._pe_model: Any = None

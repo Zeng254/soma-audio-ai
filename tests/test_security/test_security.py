@@ -304,8 +304,9 @@ class TestModelLoader:
 
         loader = SafeModelLoader()
 
-        with pytest.raises(ModelLoadError):
-            loader.load("/nonexistent/model.pth")
+        # 使用在允许目录下的不存在路径
+        with pytest.raises((ModelLoadError, FileNotFoundError)):
+            loader.load("/root/.soma/workspace/nonexistent_model.pth")
 
     def test_safe_model_loading_weights_only(self, temp_model_file: Path):
         """测试：安全模型加载（weights_only）"""

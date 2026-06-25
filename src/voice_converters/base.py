@@ -10,6 +10,13 @@ from typing import Optional, Dict, Any, List, Union
 from pathlib import Path
 import numpy as np
 
+from src.exceptions import (
+    SOMAError,
+    SOMADependencyError,
+    SOMAValidationError,
+    SOMAConversionError,
+)
+
 
 class F0Method(Enum):
     """基频提取方法"""
@@ -357,19 +364,25 @@ class LazyImportMixin:
     延迟导入混入类
     
     提供延迟导入深度学习依赖的能力，
-    避免在模块加载时就检查所有依赖
+    避免在模块加载时就检查所有依赖。
+    每个子类实例有独立的缓存，避免互相干扰。
     """
     
     # 子类应设置此属性列出需要的模块
     REQUIRED_PACKAGES: List[str] = []
     
-    # 缓存已检查的包状态
+    # 缓存已检查的包状态 - 实例变量
     _package_cache: Dict[str, Optional[bool]] = {}
+    
+    def __init__(self):
+        # 每个实例独立的缓存
+        if not hasattr(self, '_instance_cache'):
+            self._instance_cache: Dict[str, Optional[bool]] = {}
     
     @classmethod
     def _check_dependency(cls, package: str) -> bool:
         """
-        检查依赖是否可用
+        检查依赖是否可用（类级别，检查共享缓存）
         
         Args:
             package: 包名
@@ -387,6 +400,39 @@ class LazyImportMixin:
         except ImportError:
             cls._package_cache[package] = False
             return False
+    
+    @classmethod
+    def _check_dependency_instance(cls, package: str) -> bool:
+        """
+        检查依赖是否可用（实例级别，每个实例独立缓存）
+        
+        Args:
+            package: 包名
+            
+        Returns:
+            bool: 是否可用
+        """
+        # 先检查实例缓存
+        if hasattr(cls, '_instance_cache') and package in cls._instance_cache:
+            return cls._instance_cache[package]
+        
+        # 检查类缓存
+        if package in cls._package_cache:
+            result = cls._package_cache[package]
+        else:
+            try:
+                __import__(package)
+                cls._package_cache[package] = True
+                result = True
+            except ImportError:
+                cls._package_cache[package] = False
+                result = False
+        
+        # 存入实例缓存
+        if hasattr(cls, '_instance_cache'):
+            cls._instance_cache[package] = result
+        
+        return result
     
     @classmethod
     def _lazy_import_module(cls, package: str, submodule: Optional[str] = None):

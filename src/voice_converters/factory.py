@@ -438,9 +438,19 @@ class VoiceConverterManager:
         return False
 
 
-# 注册默认引擎
-from .rvc_converter import RVCConverter
-from .sovits_converter import SoVITSConverter
+# 注册默认引擎（惰性导入，失败时记录日志但不崩溃）
+import logging
 
-ConverterFactory.register_engine(ConverterType.RVC, RVCConverter)
-ConverterFactory.register_engine(ConverterType.SOVITS, SoVITSConverter)
+logger = logging.getLogger(__name__)
+
+try:
+    from .rvc_converter import RVCConverter
+    from .sovits_converter import SoVITSConverter
+    
+    ConverterFactory.register_engine(ConverterType.RVC, RVCConverter)
+    ConverterFactory.register_engine(ConverterType.SOVITS, SoVITSConverter)
+except ImportError as e:
+    logger.warning(
+        f"Failed to register default voice converter engines: {e}. "
+        "Some features may not be available."
+    )

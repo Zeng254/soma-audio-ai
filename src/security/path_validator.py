@@ -111,13 +111,15 @@ class PathValidator:
         normalized = os.path.normpath(path_str)
         if '..' in Path(normalized).parts:
             raise PathTraversalError(
-                message=f"路径包含 .. 遍历组件: {path_str!r}"
+                attempted_path=path_str,
+                allowed_base=None,
             )
 
         # 3. 检查 UNC 路径（Windows 攻击向量）
         if normalized.startswith('\\\\') or normalized.startswith('//'):
             raise PathTraversalError(
-                message=f"UNC 路径被禁用: {path_str!r}"
+                attempted_path=path_str,
+                allowed_base=None,
             )
 
         # 4. 转换为绝对路径并规范化
@@ -135,14 +137,16 @@ class PathValidator:
         normalized_resolved = os.path.normpath(str(resolved))
         if '..' in Path(normalized_resolved).parts:
             raise PathTraversalError(
-                message=f"规范化后路径包含 .. 遍历组件: {resolved!r}"
+                attempted_path=str(resolved),
+                allowed_base=None,
             )
 
         # 6. 检查符号链接
         try:
             if not self.allow_symlinks and path_obj.is_symlink():
                 raise PathTraversalError(
-                    message=f"符号链接已被禁用: {path!r}"
+                    attempted_path=str(path),
+                    allowed_base=None,
                 )
         except (OSError, ValueError):
             pass  # 文件不存在时跳过符号链接检查
@@ -153,7 +157,8 @@ class PathValidator:
         # 8. 检查是否在允许的目录范围内
         if not self._is_in_allowed_dirs(resolved):
             raise PathTraversalError(
-                message=f"路径不在允许的目录范围内: {path!r}"
+                attempted_path=str(path),
+                allowed_base=str(self.allowed_dirs[0]) if self.allowed_dirs else None,
             )
 
         logger.debug(f"路径验证通过: {path} -> {resolved}")
@@ -181,7 +186,8 @@ class PathValidator:
         normalized = os.path.normpath(path_str)
         if '..' in Path(normalized).parts:
             raise PathTraversalError(
-                message=f"路径包含 .. 遍历组件: {path_str!r}"
+                attempted_path=path_str,
+                allowed_base=None,
             )
 
         try:
@@ -211,7 +217,8 @@ class PathValidator:
         depth = len(path.parts)
         if depth > self.max_depth:
             raise PathTraversalError(
-                message=f"路径深度超限 ({depth} > {self.max_depth}): {path!r}"
+                attempted_path=str(path),
+                allowed_base=None,
             )
 
     def is_safe(self, path: Union[str, Path]) -> bool:
@@ -272,7 +279,8 @@ def safe_join(*parts: str) -> str:
     normalized = os.path.normpath(path)
     if '..' in Path(normalized).parts:
         raise PathTraversalError(
-            message=f"路径遍历攻击检测: {path!r}"
+            attempted_path=path,
+            allowed_base=None,
         )
     return path
 
@@ -296,7 +304,8 @@ def ensure_directory(path: Union[str, Path], mode: int = 0o755) -> Path:
     normalized = os.path.normpath(str(p))
     if '..' in Path(normalized).parts:
         raise PathTraversalError(
-            message=f"路径遍历攻击检测: {path!r}"
+            attempted_path=str(path),
+            allowed_base=None,
         )
     p.mkdir(parents=True, exist_ok=True, mode=mode)
     return p

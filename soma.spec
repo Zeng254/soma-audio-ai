@@ -70,6 +70,13 @@ hiddenimports = [
     # 模型相关
     'fairseq',
     'pyworld',
+    
+    # 语音转换器（voice_converters）
+    'src.voice_converters.base',
+    'src.voice_converters.factory',
+    'src.voice_converters.rvc_converter',
+    'src.voice_converters.sovits_converter',
+    'src.voice_converters.diffusion_converter',
 
     # 配置和工具
     'yaml',
