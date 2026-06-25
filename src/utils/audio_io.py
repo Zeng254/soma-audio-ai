@@ -121,8 +121,7 @@ class AudioLoader:
         通过多种方式检测当前格式：
         1. 如果有显式的 channel_first 设置，使用该设置
         2. 如果是 1D 数组，直接添加维度
-        3. 通过采样率判断第二维是否为通道数
-        4. 合理的音频长度（样本数）和通道数推断
+        3. 通过维度大小推断格式
 
         Args:
             audio: 输入音频数据
@@ -133,9 +132,9 @@ class AudioLoader:
         """
         # 如果有显式设置
         if self.channel_first is not None:
-            if self.channel_first and audio.shape[0] > audio.shape[-1]:
+            if self.channel_first and audio.ndim == 2 and audio.shape[0] > audio.shape[-1]:
                 return audio.T
-            elif not self.channel_first and audio.shape[0] < audio.shape[-1]:
+            elif not self.channel_first and audio.ndim == 2 and audio.shape[0] < audio.shape[-1]:
                 return audio.T
             return audio
 
@@ -143,40 +142,30 @@ class AudioLoader:
         if audio.ndim == 1:
             return audio[np.newaxis, :]
 
-        # 已经是合理的 (channels, samples) 格式
-        # 检查第二维是否为合理的采样率
-        if audio.shape[0] < audio.shape[1]:
-            # 可能已经是 channel_first
-            if audio.shape[0] <= 8 and audio.shape[0] not in self.COMMON_SAMPLE_RATES:
-                # 通道数通常 <= 8，且不是采样率
-                return audio
-
-        # 检查是否是 (samples, channels) 格式
-        # 方法：第二维如果 <= 8 通道且第一维很大，可能是 (samples, channels)
+        # 2D 数组需要推断
         if audio.ndim == 2:
             dim0, dim1 = audio.shape
 
             # 如果第一维是常见采样率，第二维是合理的通道数
             if dim0 in self.COMMON_SAMPLE_RATES and dim1 <= 8:
                 # 这种情况很可能是搞反了
-                # 但需要更保守的判断：检查哪个更像"样本数"
-                # 样本数通常是采样率的倍数
                 if dim0 % sample_rate == 0 or dim0 > sample_rate:
-                    # dim0 更像是样本数，需要转置
                     return audio.T
 
-            # 如果第二维是常见采样率
+            # 如果第二维是常见采样率，第一维是合理的通道数
             if dim1 in self.COMMON_SAMPLE_RATES and dim0 <= 8:
-                # dim1 更像是采样率，已经是 channel_first
                 return audio
 
-        # 保守策略：默认 soundfile 返回 (samples, channels)
-        # 如果第一维 > 第二维，可能已经是 channel_first
-        if audio.shape[0] > audio.shape[1] * 2:
-            # 样本数远大于通道数，已经是 channel_first
-            return audio
+            # 如果第一维远大于第二维，可能已经是 channel_first
+            if dim0 > dim1 * 2:
+                return audio
 
-        return audio.T
+            # 如果第二维远大于第一维，可能是 (samples, channels)
+            if dim1 > dim0 * 2:
+                return audio.T
+
+        # 保守策略：默认返回原数组（假设已经是 channel_first）
+        return audio
 
     def _resample(self, audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
         """重采样"""

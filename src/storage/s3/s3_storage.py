@@ -11,7 +11,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 允许的文件名字符集（面向用户输入的约束）
-FILE_NAME_ALLOWED_RE = re.compile(r"^[A-Za-z0-9._\-/]+$")
+# 注意：不包含 / 以防止路径遍历
+FILE_NAME_ALLOWED_RE = re.compile(r"^[A-Za-z0-9._\-]+$")
 
 
 class ListFilesResult(TypedDict):

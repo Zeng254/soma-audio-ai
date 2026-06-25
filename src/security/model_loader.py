@@ -34,21 +34,23 @@ from dataclasses import dataclass
 
 from src.config import SecurityDefaults
 from src.security.path_validator import safe_path
+from src.exceptions import SOMAModelError, SOMAValidationError, SecurityError
 
 logger = logging.getLogger(__name__)
 
 
-class ModelLoadError(Exception):
+# 兼容别名 - 使用统一的异常体系
+class ModelLoadError(SOMAModelError):
     """模型加载错误异常"""
     pass
 
 
-class ModelVerificationError(Exception):
+class ModelVerificationError(SOMAValidationError):
     """模型验证失败异常"""
     pass
 
 
-class ModelSecurityError(Exception):
+class ModelSecurityError(SecurityError):
     """模型安全检查失败异常"""
     pass
 

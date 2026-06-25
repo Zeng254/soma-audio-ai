@@ -28,7 +28,7 @@ class ConversionFormat(Enum):
     LOSSLESS_FORMATS = {WAV, FLAC, AIFF}
     
     # 有损格式
-    LOSSLESS_FORMATS_LOSSY = {MP3, AAC, OGG, M4A, WMA, AMR}
+    LOSSY_FORMATS = {MP3, AAC, OGG, M4A, WMA, AMR}
 
 
 @dataclass

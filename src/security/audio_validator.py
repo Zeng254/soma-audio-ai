@@ -407,15 +407,6 @@ def validate_audio(
         if result.is_valid:
             print(f"音频有效，采样率: {result.metadata.sample_rate}")
     """
-    validator = get_audio_validator()
-
-    if max_duration is not None:
-        # 临时设置最大时长
-        original_max = validator.max_duration
-        validator.max_duration = max_duration
-        try:
-            return validator.validate(path, check_metadata)
-        finally:
-            validator.max_duration = original_max
-
+    # 每次创建新的验证器实例，避免线程安全问题
+    validator = AudioValidator(max_duration=max_duration)
     return validator.validate(path, check_metadata)

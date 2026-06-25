@@ -8,6 +8,9 @@ from typing import List, Optional, Callable, Any, Dict
 from enum import Enum
 import numpy as np
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class NodeType(Enum):
@@ -308,7 +311,7 @@ class AudioPipeline:
                 node_times[node.name] = time.time() - node_start
                 
             except Exception as e:
-                print(f"Error in node {node.name}: {e}")
+                logger.error(f"Error in node {node.name}: {e}", exc_info=True)
                 node_times[node.name] = time.time() - node_start
         
         total_time = time.time() - start_time
