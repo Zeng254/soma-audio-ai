@@ -85,6 +85,7 @@ class HuBERTFeatureExtractor:
         self._feature_dim = 256  # Default
         self._is_loaded = False
         self._fallback_projection = None
+        self._using_fallback = False
 
         if not lazy_load:
             self.load()
@@ -180,15 +181,24 @@ class HuBERTFeatureExtractor:
             self._init_fallback_extractor()
 
     def _load_contentvec(self) -> None:
-        """Load contentvec model (RVC's preferred feature extractor)."""
+        """
+        Load contentvec model (RVC's preferred feature extractor).
+
+        Contentvec is a HuBERT-based model fine-tuned for speech content extraction,
+        commonly used in RVC for voice conversion. It produces 256-dim features.
+
+        Loading strategy (in order of preference):
+        1. torch.hub from 'sooftware/contentvec' (community-maintained)
+        2. torchaudio pipelines (if a contentvec bundle is available)
+        3. Fallback to deterministic extractor
+        """
         import torch
 
+        # Strategy 1: Try loading from softwareo/contentvec via torch.hub
         try:
-            # contentvec is typically loaded from a local checkpoint
-            # Try torch.hub first as a fallback
             model = torch.hub.load(
-                "facebookresearch/fairseq",
-                "hubert_base",
+                "sooftware/contentvec",
+                "contentvec",
                 trust_repo=True,
             )
             model = model.to(self.device)
@@ -197,17 +207,61 @@ class HuBERTFeatureExtractor:
                 param.requires_grad = False
             self.model = model
             self._feature_dim = 256
-            logger.info("Loaded contentvec-compatible model")
+            logger.info("Loaded contentvec model via torch.hub (sooftware/contentvec)")
+            return
         except Exception as e:
-            logger.warning(f"contentvec load failed: {e}. Using fallback extractor.")
-            self._init_fallback_extractor()
+            logger.debug(f"sooftware/contentvec torch.hub load failed: {e}")
+
+        # Strategy 2: Try alternative hub repo
+        try:
+            model = torch.hub.load(
+                "keonlee9420/contentvec",
+                "contentvec",
+                trust_repo=True,
+            )
+            model = model.to(self.device)
+            model.eval()
+            for param in model.parameters():
+                param.requires_grad = False
+            self.model = model
+            self._feature_dim = 256
+            logger.info("Loaded contentvec model via torch.hub (keonlee9420/contentvec)")
+            return
+        except Exception as e:
+            logger.debug(f"keonlee9420/contentvec torch.hub load failed: {e}")
+
+        # Strategy 3: Fallback
+        logger.warning(
+            "contentvec model could not be loaded from any source. "
+            "For best results, provide a local contentvec checkpoint via model_path, "
+            "or install torchaudio. Using deterministic fallback extractor."
+        )
+        self._init_fallback_extractor()
 
     def _load_from_path(self, model_path: str) -> None:
-        """Load model from a local checkpoint file."""
+        """
+        Load model from a local checkpoint file.
+
+        Security: Uses weights_only=True to prevent arbitrary code execution
+        via pickle deserialization. Falls back to weights_only=False for older
+        PyTorch versions (< 1.13) that don't support this parameter.
+        """
         import torch
 
         try:
-            checkpoint = torch.load(model_path, map_location=self.device)
+            # Try with weights_only=True first (secure, prevents pickle RCE)
+            try:
+                checkpoint = torch.load(
+                    model_path, map_location=self.device, weights_only=True
+                )
+            except TypeError:
+                # Older PyTorch versions don't support weights_only parameter
+                logger.warning(
+                    "weights_only=True not supported by this PyTorch version. "
+                    "Falling back to default load. "
+                    "WARNING: Loading untrusted checkpoints may execute arbitrary code."
+                )
+                checkpoint = torch.load(model_path, map_location=self.device)
 
             # Handle different checkpoint formats
             if isinstance(checkpoint, dict):
@@ -241,8 +295,10 @@ class HuBERTFeatureExtractor:
         Initialize a deterministic fallback feature extractor.
 
         This uses a fixed random projection (mel-like features + projection)
-        that is deterministic (seeded) so training is reproducible.
+        that is deterministic (seeded via local Generator) so training is reproducible.
         This is NOT a real HuBERT model but provides a consistent fallback.
+
+        Uses a local torch.Generator to avoid polluting the global random state.
         """
         import torch
 
@@ -252,10 +308,11 @@ class HuBERTFeatureExtractor:
         )
         self.model = None
         self._feature_dim = 256
-        # Create a fixed projection matrix (deterministic, not random per call)
-        torch.manual_seed(42)
+        self._using_fallback = True
+        # Use a local Generator to avoid polluting global random state
+        gen = torch.Generator(device=self.device).manual_seed(42)
         self._fallback_projection = torch.randn(
-            128, self._feature_dim, device=self.device
+            128, self._feature_dim, generator=gen, device=self.device
         ) * (1.0 / np.sqrt(128))
         self._fallback_projection = self._fallback_projection.t()  # (256, 128)
 
@@ -263,6 +320,11 @@ class HuBERTFeatureExtractor:
     def feature_dim(self) -> int:
         """Return the feature dimension."""
         return self._feature_dim
+
+    @property
+    def using_fallback(self) -> bool:
+        """Return True if the extractor is using the deterministic fallback instead of a real model."""
+        return self._using_fallback
 
     def extract(
         self,
@@ -298,7 +360,7 @@ class HuBERTFeatureExtractor:
 
         # features shape: (1, feature_dim, num_frames) -> (feature_dim, num_frames)
         if features.dim() == 3:
-            features = features.squeeze(0)
+            features = features.squeeze(dim=0)
 
         return features.cpu().numpy()
 
@@ -319,8 +381,9 @@ class HuBERTFeatureExtractor:
         """
         import torch
 
+        # Lazy load: load model on first extract_batch() call (same as extract())
         if not self._is_loaded:
-            raise RuntimeError("Model not loaded.")
+            self.load()
 
         batch_features = []
         for i in range(audio_batch.shape[0]):
@@ -345,7 +408,7 @@ class HuBERTFeatureExtractor:
         with torch.no_grad():
             # HuBERT expects input of shape (batch, samples)
             if audio_tensor.dim() == 3:
-                audio_tensor = audio_tensor.squeeze(1)
+                audio_tensor = audio_tensor.squeeze(dim=1)
 
             # Extract features using the model
             try:
@@ -396,7 +459,7 @@ class HuBERTFeatureExtractor:
         # STFT
         window = torch.hann_window(n_fft, device=audio_tensor.device)
         stft = torch.stft(
-            audio_tensor.squeeze(0),
+            audio_tensor.squeeze(dim=0),
             n_fft=n_fft,
             hop_length=hop_length,
             window=window,
@@ -419,12 +482,31 @@ class HuBERTFeatureExtractor:
         return features.unsqueeze(0)  # (1, feature_dim, num_frames)
 
     def _preprocess_audio(
-        self, audio: np.ndarray, target_sr: int = 16000
+        self, audio: np.ndarray, input_sr: int = 16000, target_sr: int = 16000
     ) -> np.ndarray:
-        """Preprocess audio to the expected format."""
+        """
+        Preprocess audio to the expected format for HuBERT.
+
+        Handles:
+        - Stereo to mono conversion
+        - Resampling if input_sr != target_sr (16kHz for HuBERT)
+        - Normalization to [-1, 1]
+
+        Args:
+            audio: Input audio array.
+            input_sr: Sample rate of the input audio.
+            target_sr: Target sample rate (default 16kHz for HuBERT).
+
+        Returns:
+            Preprocessed audio as float32 numpy array.
+        """
         # Convert to mono
         if audio.ndim > 1:
             audio = audio.mean(axis=0) if audio.shape[0] <= 2 else audio[:, 0]
+
+        # Resample if needed
+        if input_sr != target_sr:
+            audio = self._resample_audio(audio, input_sr, target_sr)
 
         # Normalize to [-1, 1]
         max_val = np.abs(audio).max()
@@ -432,6 +514,42 @@ class HuBERTFeatureExtractor:
             audio = audio / max_val
 
         return audio.astype(np.float32)
+
+    def _resample_audio(
+        self, audio: np.ndarray, orig_sr: int, target_sr: int
+    ) -> np.ndarray:
+        """
+        Resample audio from orig_sr to target_sr.
+
+        Uses librosa if available, falls back to scipy, then to simple
+        linear interpolation as last resort.
+        """
+        # Strategy 1: librosa
+        try:
+            import librosa
+            return librosa.resample(
+                audio.astype(np.float32), orig_sr=orig_sr, target_sr=target_sr
+            )
+        except ImportError:
+            pass
+
+        # Strategy 2: scipy
+        try:
+            from scipy.signal import resample
+            num_samples = int(len(audio) * target_sr / orig_sr)
+            return resample(audio, num_samples).astype(np.float32)
+        except ImportError:
+            pass
+
+        # Strategy 3: numpy linear interpolation (fallback)
+        logger.warning(
+            "Neither librosa nor scipy available for resampling. "
+            "Using numpy linear interpolation (lower quality). "
+            "Install librosa for best results: pip install librosa"
+        )
+        num_samples = int(len(audio) * target_sr / orig_sr)
+        indices = np.linspace(0, len(audio) - 1, num_samples)
+        return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
 
 
 class F0Extractor:
@@ -522,7 +640,13 @@ class F0Extractor:
 
     def _extract_yin(self, audio: np.ndarray) -> np.ndarray:
         """Extract F0 using librosa.yin()."""
-        import librosa
+        try:
+            import librosa
+        except ImportError:
+            raise ImportError(
+                "librosa is required for F0 extraction with method='yin'. "
+                "Install it with: pip install librosa"
+            )
 
         frame_length = self.hop_length * 2
         f0 = librosa.yin(
@@ -537,7 +661,13 @@ class F0Extractor:
 
     def _extract_pyin(self, audio: np.ndarray) -> np.ndarray:
         """Extract F0 using librosa.pyin()."""
-        import librosa
+        try:
+            import librosa
+        except ImportError:
+            raise ImportError(
+                "librosa is required for F0 extraction with method='pyin'. "
+                "Install it with: pip install librosa"
+            )
 
         frame_length = self.hop_length * 2
         f0, voiced_flag, voiced_probs = librosa.pyin(
@@ -557,37 +687,43 @@ class F0Extractor:
         """Extract F0 using pyworld DIO algorithm."""
         try:
             import pyworld as pw
-
-            f0, t = pw.dio(
-                audio.astype(np.float64),
-                fs=self.sample_rate,
-                f0_floor=self.f0_min,
-                f0_ceil=self.f0_max,
-                frame_period=1000.0 * self.hop_length / self.sample_rate,
-            )
-            f0 = pw.stonemask(audio.astype(np.float64), f0, t, self.sample_rate)
-            return f0.astype(np.float32)
         except ImportError:
-            logger.warning("pyworld not available, falling back to librosa.yin")
+            logger.warning(
+                "pyworld not available for DIO F0 extraction. "
+                "Install with: pip install pyworld. Falling back to librosa.yin."
+            )
             return self._extract_yin(audio)
+
+        f0, t = pw.dio(
+            audio.astype(np.float64),
+            fs=self.sample_rate,
+            f0_floor=self.f0_min,
+            f0_ceil=self.f0_max,
+            frame_period=1000.0 * self.hop_length / self.sample_rate,
+        )
+        f0 = pw.stonemask(audio.astype(np.float64), f0, t, self.sample_rate)
+        return f0.astype(np.float32)
 
     def _extract_harvest(self, audio: np.ndarray) -> np.ndarray:
         """Extract F0 using pyworld Harvest algorithm."""
         try:
             import pyworld as pw
-
-            f0, t = pw.harvest(
-                audio.astype(np.float64),
-                fs=self.sample_rate,
-                f0_floor=self.f0_min,
-                f0_ceil=self.f0_max,
-                frame_period=1000.0 * self.hop_length / self.sample_rate,
-            )
-            f0 = pw.stonemask(audio.astype(np.float64), f0, t, self.sample_rate)
-            return f0.astype(np.float32)
         except ImportError:
-            logger.warning("pyworld not available, falling back to librosa.yin")
+            logger.warning(
+                "pyworld not available for Harvest F0 extraction. "
+                "Install with: pip install pyworld. Falling back to librosa.yin."
+            )
             return self._extract_yin(audio)
+
+        f0, t = pw.harvest(
+            audio.astype(np.float64),
+            fs=self.sample_rate,
+            f0_floor=self.f0_min,
+            f0_ceil=self.f0_max,
+            frame_period=1000.0 * self.hop_length / self.sample_rate,
+        )
+        f0 = pw.stonemask(audio.astype(np.float64), f0, t, self.sample_rate)
+        return f0.astype(np.float32)
 
     def _adjust_length(self, f0: np.ndarray, target_length: int) -> np.ndarray:
         """Pad or trim F0 to target length."""

@@ -1210,6 +1210,33 @@ class TestHuBERTFeatureExtractor:
         assert features is not None
         assert features.shape[0] == 256
 
+    def test_fallback_determinism(self):
+        """Test that fallback extractor produces identical output for identical input."""
+        from src.training.feature_extractor import HuBERTFeatureExtractor
+        # Create with lazy_load (default) and manually trigger fallback
+        extractor = HuBERTFeatureExtractor(device="cpu")
+        # Directly call _init_fallback_extractor to avoid network download attempts
+        extractor._init_fallback_extractor()
+        extractor._is_loaded = True
+        assert extractor.using_fallback is True
+
+        # Same input should produce same output (deterministic)
+        audio = np.random.RandomState(123).randn(4000).astype(np.float32) * 0.1
+        features_1 = extractor.extract(audio, 16000)
+        features_2 = extractor.extract(audio, 16000)
+        np.testing.assert_array_equal(features_1, features_2)
+
+    def test_using_fallback_property(self):
+        """Test that using_fallback property correctly reports fallback mode."""
+        from src.training.feature_extractor import HuBERTFeatureExtractor
+        # Lazy load - not loaded yet, not in fallback
+        extractor = HuBERTFeatureExtractor(device="cpu")
+        assert extractor.using_fallback is False
+
+        # Manually trigger fallback (avoids network download)
+        extractor._init_fallback_extractor()
+        assert extractor.using_fallback is True
+
 
 class TestFeaturePipeline:
     """Tests for FeaturePipeline."""
