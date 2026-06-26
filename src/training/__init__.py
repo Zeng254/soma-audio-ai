@@ -51,6 +51,7 @@ from .preprocess import (
 )
 from .dataset import RVCDataset, create_dataloader, split_dataset
 from .trainer import RVCTrainer
+from .feature_extractor import HuBERTFeatureExtractor, F0Extractor, FeaturePipeline
 from .cli import main as cli_main
 
 __all__ = [
@@ -75,6 +76,10 @@ __all__ = [
     "split_dataset",
     # Trainer
     "RVCTrainer",
+    # Feature Extraction
+    "HuBERTFeatureExtractor",
+    "F0Extractor",
+    "FeaturePipeline",
     # CLI
     "cli_main",
 ]

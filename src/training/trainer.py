@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from .config import ModelConfig, OptimizerConfig, TrainConfig, TrainingConfig
+from .feature_extractor import FeaturePipeline
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,9 @@ class RVCTrainer:
         # AMP
         self.scaler = None
 
+        # Feature extraction pipeline (HuBERT + F0)
+        self.feature_pipeline = None
+
         # Training state
         self.current_epoch = 0
         self.global_step = 0
@@ -295,6 +299,36 @@ class RVCTrainer:
             self.config.train.checkpoint_dir,
         ]:
             Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+    def init_feature_pipeline(
+        self,
+        model_name: str = "hubert_base",
+        model_path: Optional[str] = None,
+        f0_method: str = "dio",
+    ) -> None:
+        """
+        Initialize the HuBERT + F0 feature extraction pipeline.
+
+        This should be called before training starts. The pipeline is loaded
+        in eval mode with frozen weights to extract real speech features.
+
+        Args:
+            model_name: HuBERT model name ("hubert_base" or "contentvec").
+            model_path: Optional path to a local HuBERT checkpoint.
+            f0_method: F0 extraction method ("yin", "pyin", "dio", "harvest").
+        """
+        self.feature_pipeline = FeaturePipeline(
+            model_name=model_name,
+            device=self.device,
+            model_path=model_path,
+            f0_method=f0_method,
+            sample_rate=self.config.data.sample_rate,
+            hop_length=self.config.data.hop_length,
+        )
+        logger.info(
+            "Feature pipeline initialized: model=%s, f0_method=%s, feature_dim=%d",
+            model_name, f0_method, self.feature_pipeline.feature_dim,
+        )
 
     def build_models(self):
         """Build generator and discriminator models."""
@@ -410,14 +444,21 @@ class RVCTrainer:
         audio = batch["audio"].to(self.device)
         mel_target = batch["mel"].to(self.device)
 
-        # Create dummy features for generator input
+        # Extract real features using HuBERT + F0 pipeline
         batch_size = audio.shape[0]
         seq_len = mel_target.shape[-1] if mel_target.dim() == 3 else audio.shape[-1] // self.config.data.hop_length
-        features = torch.randn(
-            batch_size, self.config.model.in_channels, seq_len,
-            device=self.device,
-        )
-        f0 = torch.ones(batch_size, seq_len, device=self.device) * 200.0
+
+        if self.feature_pipeline is not None:
+            # Use real HuBERT features and F0 extraction
+            features, f0 = self._extract_real_features(audio, seq_len)
+        else:
+            # Fallback to dummy features (for backward compatibility / testing)
+            logger.debug("Feature pipeline not initialized, using dummy features")
+            features = torch.randn(
+                batch_size, self.config.model.in_channels, seq_len,
+                device=self.device,
+            )
+            f0 = torch.ones(batch_size, seq_len, device=self.device) * 200.0
 
         losses = {}
 
@@ -544,6 +585,85 @@ class RVCTrainer:
 
         self.global_step += 1
         return losses
+
+    def _extract_real_features(
+        self, audio: "torch.Tensor", target_frames: int
+    ) -> Tuple["torch.Tensor", "torch.Tensor"]:
+        """
+        Extract real HuBERT features and F0 from audio batch.
+
+        Args:
+            audio: Audio tensor, shape (batch_size, samples) or (batch_size, 1, samples).
+            target_frames: Target number of frames for alignment.
+
+        Returns:
+            Tuple of (features, f0) tensors:
+                - features: (batch_size, in_channels, target_frames)
+                - f0: (batch_size, target_frames)
+        """
+        import torch
+
+        batch_size = audio.shape[0]
+        sample_rate = self.config.data.sample_rate
+
+        # Convert audio to numpy for feature extraction
+        audio_np = audio.detach().cpu().numpy()
+
+        # Handle shape: (batch, 1, samples) -> (batch, samples)
+        if audio_np.ndim == 3:
+            audio_np = audio_np.squeeze(1)
+
+        # Extract features for each sample in the batch
+        all_features = []
+        all_f0 = []
+
+        for i in range(batch_size):
+            audio_sample = audio_np[i]
+
+            # Extract HuBERT features and F0 using the pipeline
+            features, f0 = self.feature_pipeline.extract(
+                audio_sample,
+                sample_rate=sample_rate,
+                target_frames=target_frames,
+            )
+
+            all_features.append(features)
+            all_f0.append(f0)
+
+        # Stack into batch tensors
+        # features: (batch, feature_dim, frames) -> pad/trim to in_channels
+        feature_dim = self.feature_pipeline.feature_dim
+        in_channels = self.config.model.in_channels
+
+        features_padded = np.zeros(
+            (batch_size, in_channels, target_frames), dtype=np.float32
+        )
+        f0_padded = np.zeros((batch_size, target_frames), dtype=np.float32)
+
+        for i in range(batch_size):
+            feats = all_features[i]  # (feature_dim, frames)
+            f0_arr = all_f0[i]  # (frames,)
+
+            # Handle feature dimension mismatch
+            feat_dim_actual = feats.shape[0]
+            feat_frames = feats.shape[1]
+
+            if feat_dim_actual >= in_channels:
+                # Take first in_channels dimensions
+                features_padded[i] = feats[:in_channels, :target_frames]
+            else:
+                # Pad with zeros if feature_dim < in_channels
+                features_padded[i, :feat_dim_actual, :feat_frames] = feats
+
+            # Handle F0 length
+            f0_len = len(f0_arr)
+            f0_padded[i, :f0_len] = f0_arr[:target_frames]
+
+        # Convert to tensors
+        features_tensor = torch.from_numpy(features_padded).float().to(self.device)
+        f0_tensor = torch.from_numpy(f0_padded).float().to(self.device)
+
+        return features_tensor, f0_tensor
 
     def train_epoch(self, dataloader) -> Dict[str, float]:
         """Train for one epoch."""
