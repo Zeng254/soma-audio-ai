@@ -63,8 +63,8 @@ class AudioConverter:
     
     # Quality presets
     QUALITY_PRESETS = {
-        "ultra": {"codec": "flac", "compression": 0},
-        "high": {"codec": "flac", "compression": 3},
+        "ultra": {"codec": "libflac", "compression": 0},
+        "high": {"codec": "libflac", "compression": 3},
         "medium": {"codec": "libmp3lame", "qscale": 2},
         "low": {"codec": "libmp3lame", "qscale": 4},
     }
@@ -113,14 +113,20 @@ class AudioConverter:
         Returns:
             bool: Whether conversion succeeded
         """
+        # P1-6: Validate input/output paths to prevent command injection
+        from src.security.path_validator import safe_path
+        
+        safe_input = safe_path(str(input_path))
+        safe_output = safe_path(str(output_path))
+        
         # Determine output format
         if output_format is None:
-            output_format = Path(output_path).suffix[1:].lower()
+            output_format = Path(safe_output).suffix[1:].lower()
         
         ffmpeg = self._get_ffmpeg()
         try:
             # Build FFmpeg command
-            stream = ffmpeg.input(input_path)
+            stream = ffmpeg.input(str(safe_input))
             
             # Audio filters
             filters = []
@@ -151,7 +157,7 @@ class AudioConverter:
             output_kwargs.update(kwargs)
             
             # Execute conversion
-            ffmpeg.output(stream, output_path, **output_kwargs).run(
+            ffmpeg.output(stream, str(safe_output), **output_kwargs).run(
                 cmd=self.ffmpeg_path,
                 overwrite_output=True,
                 quiet=True,
@@ -269,9 +275,20 @@ class AudioConverter:
         output_path.mkdir(parents=True, exist_ok=True)
         
         results = {}
+        # P2-18: Track used output filenames to detect collisions
+        used_names: dict = {}  # stem -> count
+        
         for input_file in input_files:
             input_name = Path(input_file).stem
-            output_file = str(output_path / f"{input_name}.{output_format}")
+            
+            # P2-18: Detect filename collision and add sequence suffix
+            if input_name in used_names:
+                used_names[input_name] += 1
+                output_file = str(output_path / f"{input_name}_{used_names[input_name]}.{output_format}")
+            else:
+                used_names[input_name] = 0
+                output_file = str(output_path / f"{input_name}.{output_format}")
+            
             results[input_file] = self.convert(input_file, output_file, output_format, **kwargs)
         
         return results

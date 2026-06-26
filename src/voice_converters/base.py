@@ -415,13 +415,15 @@ class LazyImportMixin:
     Provides lazy import for deep learning dependencies,
     Avoid checking all dependencies at module load time.
     Each subclass instance has independent cache to avoid interference.
+    Thread-safe: uses threading.Lock for cache access.
     """
     
     # Subclass should set this attribute to list required modules
     REQUIRED_PACKAGES: List[str] = []
     
-    # Cached checked package status - instance variable
+    # Cached checked package status - class level, protected by lock
     _package_cache: Dict[str, Optional[bool]] = {}
+    _cache_lock = __import__('threading').Lock()
     
     def __init__(self):
         # Each instance has independent cache
@@ -432,6 +434,7 @@ class LazyImportMixin:
     def _check_dependency(cls, package: str) -> bool:
         """
         Check if dependency is available (class level, check shared cache)
+        Thread-safe with lock protection.
         
         Args:
             package: package name
@@ -439,21 +442,28 @@ class LazyImportMixin:
         Returns:
             bool: whether available
         """
+        # Fast path: check cache without lock
         if package in cls._package_cache:
             return cls._package_cache[package]
         
-        try:
-            __import__(package)
-            cls._package_cache[package] = True
-            return True
-        except ImportError:
-            cls._package_cache[package] = False
-            return False
+        # Slow path: acquire lock and double-check
+        with cls._cache_lock:
+            if package in cls._package_cache:
+                return cls._package_cache[package]
+            
+            try:
+                __import__(package)
+                cls._package_cache[package] = True
+                return True
+            except ImportError:
+                cls._package_cache[package] = False
+                return False
     
     @classmethod
     def _check_dependency_instance(cls, package: str) -> bool:
         """
         Check if dependency is available (instance level, each instance has independent cache)
+        Thread-safe with lock protection.
         
         Args:
             package: package name
@@ -465,17 +475,8 @@ class LazyImportMixin:
         if hasattr(cls, '_instance_cache') and package in cls._instance_cache:
             return cls._instance_cache[package]
         
-        # CheckClassCache
-        if package in cls._package_cache:
-            result = cls._package_cache[package]
-        else:
-            try:
-                __import__(package)
-                cls._package_cache[package] = True
-                result = True
-            except ImportError:
-                cls._package_cache[package] = False
-                result = False
+        # Use class-level check (already thread-safe)
+        result = cls._check_dependency(package)
         
         # Store in instance cache
         if hasattr(cls, '_instance_cache'):

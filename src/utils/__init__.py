@@ -19,7 +19,7 @@ from src.utils.validator import (
     validate_model_path,
     validate_audio_format,
     validate_float,
-    AudioValidator,
+    AudioFormatValidator,
 )
 
 from src.utils.file import (
@@ -45,7 +45,7 @@ __all__ = [
     "validate_model_path",
     "validate_audio_format",
     "validate_float",
-    "AudioValidator",
+    "AudioFormatValidator",
     # file
     "get_extension",
     "ensure_dir",

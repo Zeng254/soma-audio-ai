@@ -99,6 +99,46 @@ class FileOps:
     DOWNLOAD_DIR = "/tmp"
 
     @staticmethod
+    def _is_private_url(url: str) -> bool:
+        """
+        P1-7: Check if URL points to internal/private network address (SSRF protection)
+        
+        Blocks:
+        - localhost / 127.0.0.1
+        - Private ranges: 10.x, 172.16-31.x, 192.168.x
+        - Link-local: 169.254.x
+        - IPv6 loopback / link-local
+        """
+        import ipaddress
+        from urllib.parse import urlparse
+        
+        try:
+            parsed = urlparse(url)
+            hostname = parsed.hostname
+            if not hostname:
+                return True  # No hostname is suspicious
+            
+            # Block localhost variants
+            if hostname.lower() in ('localhost', 'localhost.localdomain', '0.0.0.0'):
+                return True
+            
+            # Resolve and check IP
+            try:
+                import socket
+                resolved_ips = socket.getaddrinfo(hostname, None)
+                for family, _, _, _, sockaddr in resolved_ips:
+                    ip = ipaddress.ip_address(sockaddr[0])
+                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                        return True
+            except (socket.gaierror, ValueError):
+                # If we can't resolve, block it to be safe
+                return True
+            
+            return False
+        except Exception:
+            return True  # Block on any parsing error
+
+    @staticmethod
     def _get_bytes_stream(file_obj:File) -> tuple[bytes, str]:
         """
         Get file content and suffix, size limit check, raise exception if exceeded
@@ -106,6 +146,12 @@ class FileOps:
         _, ext = infer_file_category(file_obj.url)
 
         if file_obj.is_remote:
+            # P1-7: SSRF protection - block internal/private network addresses
+            if FileOps._is_private_url(file_obj.url):
+                raise ValueError(
+                    f"Access to internal network addresses is not allowed: {file_obj.url}"
+                )
+            
             try:
                 # stream=True: At this point only download headers, connection stays open, body not yet downloaded
                 with requests.get(file_obj.url, stream=True, timeout=60) as resp:

@@ -32,15 +32,30 @@ class ConverterFactory:
     # Engine registry
     _engines: Dict[ConverterType, Type[BaseVoiceConverter]] = {}
     
-    # Model type identifier
+    # Model type identifier - structured by detection strategy
     MODEL_TYPE_INDICATORS = {
-        # RVC identifier
-        ".pth": "rvc",
-        "rvc": ["model", "emb", "f0"],
-        
-        # SoVITS identifier
-        "G_*.pth": "sovits",
-        "sovits": ["config", "mel", "spk"],
+        "by_filename_pattern": {
+            # SoVITS naming convention: G_*.pth, D_*.pth
+            "sovits": [r"^G_\d+\.pth$", r"^D_\d+\.pth$"],
+            # RVC: any .pth that doesn't match SoVITS pattern
+            "rvc": [r".+\.pth$"],
+        },
+        "by_checkpoint_keys": {
+            # SoVITS checkpoint signature keys
+            "sovits": ["generator", "discriminator", "spk", "mel"],
+            # RVC checkpoint signature keys
+            "rvc": ["weight", "emb", "f0", "model"],
+        },
+        "by_config_keys": {
+            # SoVITS config signature keys
+            "sovits": ["train", "data", "spk", "n_speakers"],
+            # RVC config signature keys
+            "rvc": ["emb", "f0", "sr", "pitch"],
+        },
+        "by_file_extension": {
+            # Index file indicates RVC
+            "rvc": [".index"],
+        },
     }
     
     @classmethod

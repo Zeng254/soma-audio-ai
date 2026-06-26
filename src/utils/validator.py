@@ -18,7 +18,7 @@ class ValidationError(SOMAError):
     pass
 
 
-class AudioValidator:
+class AudioFormatValidator:
     """
     Audio parameter validator
     
@@ -246,10 +246,10 @@ class EffectParameterValidator:
                     raise ValidationError(f"Band {i} must be a dictionary")
                 
                 if "freq" in band:
-                    AudioValidator.validate_frequency(band["freq"], 20, 20000)
+                    AudioFormatValidator.validate_frequency(band["freq"], 20, 20000)
                 
                 if "gain" in band:
-                    AudioValidator.validate_gain(band["gain"], -20, 20)
+                    AudioFormatValidator.validate_gain(band["gain"], -20, 20)
                 
                 if "q" in band:
                     q = band["q"]

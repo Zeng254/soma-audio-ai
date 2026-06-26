@@ -57,8 +57,7 @@ class MSSTSeparator(BaseSeparator):
     def _load_model(self):
         """DelayLoad MSST Model"""
         if self._model is None:
-            # TODO: Implement MSST model loading logic
-            # Reserved interface, to be integrated with actual model
+            # MSST model loading interface - reserved for future integration
             raise NotImplementedError(
                 "MSST model not yet implemented. "
                 "Use DemucsSeparator for source separation."
@@ -110,8 +109,8 @@ class MSSTSeparator(BaseSeparator):
         # Validate and normalize input
         audio = self.validate_audio_input(audio)
         
-        # TODO: Implement MSST separation logic
-        # Reserved interface, to be integrated with actual model
+        # MSST separation logic - reserved for future integration
+        # Currently returns None as model is not yet implemented
         
         return SeparationResult(
             vocals=None,
