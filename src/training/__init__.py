@@ -52,6 +52,7 @@ from .preprocess import (
 from .dataset import RVCDataset, create_dataloader, split_dataset
 from .trainer import RVCTrainer
 from .feature_extractor import HuBERTFeatureExtractor, F0Extractor, FeaturePipeline
+from .inference import RVCInference, VocoderWrapper
 from .cli import main as cli_main
 
 __all__ = [
@@ -80,6 +81,9 @@ __all__ = [
     "HuBERTFeatureExtractor",
     "F0Extractor",
     "FeaturePipeline",
+    # Inference
+    "RVCInference",
+    "VocoderWrapper",
     # CLI
     "cli_main",
 ]
