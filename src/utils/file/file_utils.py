@@ -93,15 +93,6 @@ def safe_filename(filename: str, max_length: int = 254) -> str:
         name_without_ext = name_without_ext[:max_name_len]
     
     return name_without_ext + ext
-    
-    if not name:
-        name = "unnamed"
-    
-    # Limit length (preserve extension)
-    max_name_len = max_length - len(ext)
-    if len(name) > max_name_len:
-        name = name[:max_name_len]
-    
     return name + ext
 
 

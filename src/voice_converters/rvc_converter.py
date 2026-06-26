@@ -131,24 +131,6 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
 
         return self.device
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     def _lazy_import_module(self, name: str):
         """Lazy import module"""
         if name == "torch":

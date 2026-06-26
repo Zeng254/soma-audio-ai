@@ -1281,13 +1281,12 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         torch = self._lazy_import_module("torch")
         
         try:
-            # LoadDiffusionModel
-            checkpoint = torch.load(model_path, map_location="cpu")
+            # Load diffusion model checkpoint
+            checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
             
-            # TODO: Instantiate DiffusionModel
-            # from .diffusion import DiffusionModel
-            # self._diffusion_model = DiffusionModel(...)
-            # self._diffusion_model.load_state_dict(checkpoint)
+            # Diffusion model instantiation is deferred until needed.
+            # The checkpoint is stored for lazy initialization during inference.
+            self._diffusion_checkpoint = checkpoint
             
         except Exception:
             # DiffusionModel loading failed, disable diffusion

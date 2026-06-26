@@ -326,43 +326,9 @@ def read_ppt(file_input: Union[str, bytes, BytesIO]) -> str:
 
 
 # ============================================================
-# Convenience function
+# Convenience functions - imported from file_utils for consistency
 # ============================================================
 
-def get_extension(path: str) -> str:
-    """
-    Get file extension (including dot)
-    
-    Args:
-        path: File path
-        
-    Returns:
-        Extension (including dot), e.g. '.wav'
-    """
-    import os
-    return os.path.splitext(path)[1].lower()
+from src.utils.file.file_utils import get_extension, safe_filename
 
-
-def safe_filename(filename: str) -> str:
-    """
-    Generate secure filename (remove dangerous characters)
-    
-    Args:
-        filename: Original filename
-        
-    Returns:
-        Secure filename
-    """
-    import re
-    # Remove or replace dangerous characters
-    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', filename)
-    # Remove leading and trailing spaces and dots
-    safe = safe.strip('. ')
-    # Limit length
-    if len(safe) > 200:
-        name, ext = os.path.splitext(safe)
-        safe = name[:200-len(ext)] + ext
-    # Ensure not empty
-    if not safe:
-        safe = "unnamed"
-    return safe
+__all__ = ['get_extension', 'safe_filename']
