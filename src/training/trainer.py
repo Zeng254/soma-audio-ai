@@ -335,7 +335,7 @@ class RVCTrainer:
         import torch
 
         # Build generator (reuse existing RVC model architecture)
-        from voice_converters.rvc_models import SimpleRVCModel
+        from src.voice_converters.rvc_models import SimpleRVCModel
 
         model_cfg = self.config.model
         self.generator = SimpleRVCModel({
@@ -988,7 +988,7 @@ class RVCTrainer:
         }
 
         # Create a VITSGenerator to get the correct state_dict structure
-        from voice_converters.sovits_models import VITSGenerator
+        from src.voice_converters.sovits_models import VITSGenerator
 
         vits_gen = VITSGenerator(
             n_vocab=sovits_config["n_vocab"],

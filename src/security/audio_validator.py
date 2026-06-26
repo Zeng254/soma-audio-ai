@@ -10,10 +10,10 @@ Provides audio file security checks, including:
 - Audio metadata validation
 
 Usage:
-    from src.security.audio_validator import AudioValidator, validate_audio
+    from src.security.audio_validator import SecureAudioValidator, validate_audio
 
     # Create validator
-    validator = AudioValidator()
+    validator = SecureAudioValidator()
 
     # ValidateAudioFile
     result = validator.validate("/path/to/audio.wav")
@@ -83,7 +83,7 @@ class AudioValidationResult:
     warnings: List[str] = field(default_factory=list)
 
 
-class AudioValidator:
+class SecureAudioValidator:
     """
     Audio file validator
 
@@ -96,7 +96,7 @@ class AudioValidator:
     - Read audio metadata
 
     Usage example:
-        validator = AudioValidator(
+        validator = SecureAudioValidator(
             allowed_formats=[AudioFormat.WAV, AudioFormat.MP3],
             max_duration=3600,
             max_file_size_mb=500
@@ -400,14 +400,14 @@ class AudioValidator:
 
 
 # Global validator instance
-_default_validator: Optional[AudioValidator] = None
+_default_validator: Optional[SecureAudioValidator] = None
 
 
-def get_audio_validator() -> AudioValidator:
+def get_audio_validator() -> SecureAudioValidator:
     """Get global audio validator instance"""
     global _default_validator
     if _default_validator is None:
-        _default_validator = AudioValidator()
+        _default_validator = SecureAudioValidator()
     return _default_validator
 
 
@@ -433,5 +433,5 @@ def validate_audio(
             logger.info(f"Audio valid, sample rate: {result.metadata.sample_rate}")
     """
     # Create new validator instance each time to avoid thread safety issues
-    validator = AudioValidator(max_duration=max_duration)
+    validator = SecureAudioValidator(max_duration=max_duration)
     return validator.validate(path, check_metadata)

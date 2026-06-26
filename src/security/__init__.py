@@ -3,7 +3,7 @@ SOMA Security module
 
 Provides input validation and security checks，Including：
 - Path security validation (PathValidator)
-- AudioFile validation (AudioValidator)
+- AudioFile validation (SecureAudioValidator)
 - SecurityModel loading (SafeModelLoader)
 
 Layered structure:
@@ -21,7 +21,7 @@ Usage example:
     safe = validator.validate("/path/to/file")
 
     # AudioValidate
-    from src.security import AudioValidator, validate_audio
+    from src.security import SecureAudioValidator, validate_audio
 
     result = validate_audio("/path/to/audio.wav")
     if result.is_valid:
@@ -44,7 +44,7 @@ from .path_validator import (
 )
 
 from .audio_validator import (
-    AudioValidator,
+    SecureAudioValidator,
     AudioFormat,
     AudioMetadata,
     AudioValidationResult,
@@ -74,7 +74,7 @@ __all__ = [
     "get_validator",
 
     # AudioValidate
-    "AudioValidator",
+    "SecureAudioValidator",
     "AudioFormat",
     "AudioMetadata",
     "AudioValidationResult",

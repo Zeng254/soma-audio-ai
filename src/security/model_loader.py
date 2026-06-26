@@ -34,24 +34,17 @@ from dataclasses import dataclass
 
 from src.config import SecurityDefaults
 from src.security.path_validator import safe_path
-from src.exceptions import SOMAModelError, SOMAValidationError, SecurityError
+from src.exceptions import SOMAModelError, SOMAValidationError, SecurityError, ModelLoadError, ModelSecurityError
 
 logger = logging.getLogger(__name__)
 
 
 # Compatibility alias - use unified exception system
-class ModelLoadError(SOMAModelError):
-    """Model loadingErrorException"""
-    pass
+# ModelLoadError and ModelSecurityError are imported from src.exceptions
 
 
 class ModelVerificationError(SOMAValidationError):
     """Model validationFailException"""
-    pass
-
-
-class ModelSecurityError(SecurityError):
-    """ModelSecurityCheckFailException"""
     pass
 
 

@@ -63,8 +63,8 @@ class AudioConverter:
     
     # Quality presets
     QUALITY_PRESETS = {
-        "ultra": {"codec": "libFLAC", "compression": 0},
-        "high": {"codec": "libFLAC", "compression": 3},
+        "ultra": {"codec": "flac", "compression": 0},
+        "high": {"codec": "flac", "compression": 3},
         "medium": {"codec": "libmp3lame", "qscale": 2},
         "low": {"codec": "libmp3lame", "qscale": 4},
     }

@@ -62,6 +62,7 @@ class PipelineResult:
     nodes_executed: List[str]
     node_times: Dict[str, float]
     metadata: Optional[Dict[str, Any]] = None
+    node_failures: Dict[str, str] = field(default_factory=dict)  # P2-11: Track failed nodes
 
 
 class AudioPipeline:
@@ -289,6 +290,7 @@ class AudioPipeline:
         current_sr = sample_rate
         nodes_executed = []
         node_times = {}
+        node_failures = {}  # P2-11: Track failed nodes
         
         # Record separation result
         separation_results = {}
@@ -313,8 +315,18 @@ class AudioPipeline:
             except Exception as e:
                 logger.error(f"Error in node {node.name}: {e}", exc_info=True)
                 node_times[node.name] = time.time() - node_start
+                # P2-11: Record failure information for downstream detection
+                node_failures[node.name] = f"{type(e).__name__}: {str(e)}"
         
         total_time = time.time() - start_time
+        
+        # P2-11: Build metadata with failure info
+        metadata = {}
+        if separation_results:
+            metadata["separation_results"] = separation_results
+        if node_failures:
+            metadata["node_failures"] = node_failures
+            metadata["partial_failure"] = True
         
         return PipelineResult(
             audio=current_audio,
@@ -322,7 +334,8 @@ class AudioPipeline:
             duration=total_time,
             nodes_executed=nodes_executed,
             node_times=node_times,
-            metadata={"separation_results": separation_results} if separation_results else None,
+            metadata=metadata if metadata else None,
+            node_failures=node_failures,
         )
     
     def execute_file(

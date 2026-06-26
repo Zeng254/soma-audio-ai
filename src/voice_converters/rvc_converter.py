@@ -234,11 +234,19 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
                 raise ImportError("PyTorch is required for RVC")
 
             # Load model checkpoint
-            checkpoint = torch.load(
-                model_path,
-                map_location=self.device,
-                weights_only=False
-            )
+            # P0-1: Use weights_only=True for security (pickle deserialization risk)
+            try:
+                checkpoint = torch.load(
+                    model_path,
+                    map_location=self.device,
+                    weights_only=True
+                )
+            except TypeError:
+                # Older PyTorch (<1.13) doesn't support weights_only parameter
+                logger.warning("PyTorch version doesn't support weights_only=True, using default loading")
+                checkpoint = torch.load(model_path, map_location=self.device)
+            except Exception as e:
+                raise RuntimeError(f"Failed to load model from {model_path}: {e}") from e
 
             # ExtractionModelConfiguration
             if isinstance(checkpoint, dict):

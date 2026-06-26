@@ -93,7 +93,6 @@ def safe_filename(filename: str, max_length: int = 254) -> str:
         name_without_ext = name_without_ext[:max_name_len]
     
     return name_without_ext + ext
-    return name + ext
 
 
 def ensure_parent_dir(file_path: str) -> Path:

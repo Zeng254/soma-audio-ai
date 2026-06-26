@@ -120,13 +120,15 @@ class VocoderWrapper:
         """Load vocoder from checkpoint file."""
         import torch
 
-        # P1-4: Use weights_only=True for security, with fallback for older PyTorch
+        # P0-1: Use weights_only=True for security (pickle deserialization risk)
         try:
             checkpoint = torch.load(self.vocoder_path, map_location=self.device, weights_only=True)
         except TypeError:
-            # Older PyTorch versions don't support weights_only parameter
+            # Older PyTorch (<1.13) doesn't support weights_only parameter
             logger.warning("PyTorch version doesn't support weights_only=True, using default loading")
             checkpoint = torch.load(self.vocoder_path, map_location=self.device)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load vocoder from {self.vocoder_path}: {e}") from e
 
         # Try to detect vocoder type from checkpoint
         if isinstance(checkpoint, dict):
@@ -141,7 +143,7 @@ class VocoderWrapper:
 
         # Import HiFiGAN from voice_converters
         try:
-            from voice_converters.rvc_models import RVCGenerator
+            from src.voice_converters.rvc_models import RVCGenerator
             self.vocoder = RVCGenerator(
                 in_channels=256,
                 out_channels=1,
@@ -362,7 +364,7 @@ class RVCInference:
     def feature_pipeline(self):
         """Get the feature pipeline, creating it if needed."""
         if self._feature_pipeline is None:
-            from training.feature_extractor import FeaturePipeline
+            from src.training.feature_extractor import FeaturePipeline
             self._feature_pipeline = FeaturePipeline(
                 model_name=self._hubert_model,
                 device=self.device,
@@ -392,18 +394,18 @@ class RVCInference:
 
         self._model_path = path
 
-        # P1-4: Use weights_only=True for security, with fallback for older PyTorch
+        # P0-1: Use weights_only=True for security (pickle deserialization risk)
         try:
             checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         except TypeError:
-            # Older PyTorch versions don't support weights_only parameter
+            # Older PyTorch (<1.13) doesn't support weights_only parameter
             logger.warning("PyTorch version doesn't support weights_only=True, using default loading")
             checkpoint = torch.load(path, map_location=self.device)
         except Exception as e:
             raise RuntimeError(f"Failed to load model from {path}: {e}") from e
 
         # Build model from checkpoint
-        from voice_converters.rvc_models import create_rvc_model_from_checkpoint
+        from src.voice_converters.rvc_models import create_rvc_model_from_checkpoint
 
         self.model = create_rvc_model_from_checkpoint(checkpoint)
         self.model.to(self.device)
@@ -694,7 +696,7 @@ class RVCInference:
 
         # Recreate feature pipeline on new device
         if self._feature_pipeline is not None:
-            from training.feature_extractor import FeaturePipeline
+            from src.training.feature_extractor import FeaturePipeline
             self._feature_pipeline = FeaturePipeline(
                 model_name=self._hubert_model,
                 device=device,

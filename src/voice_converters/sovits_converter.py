@@ -1252,8 +1252,13 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
         torch = self._lazy_import_module("torch")
 
         # LoadWeight
+        # P0-1: Use weights_only=True for security (pickle deserialization risk)
         try:
-            checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+            checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+        except TypeError:
+            # Older PyTorch (<1.13) doesn't support weights_only parameter
+            logger.warning("PyTorch version doesn't support weights_only=True, using default loading")
+            checkpoint = torch.load(model_path, map_location="cpu")
         except Exception as e:
             raise SOMAModelError(f"Failed to load model checkpoint: {e}")
 

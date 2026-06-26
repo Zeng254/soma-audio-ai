@@ -133,9 +133,9 @@ class TestAudioValidator:
 
     def test_validate_wav_file(self, temp_audio_file: Path):
         """测试：验证 WAV 文件"""
-        from src.security import AudioValidator
+        from src.security import SecureAudioValidator
 
-        validator = AudioValidator()
+        validator = SecureAudioValidator()
         result = validator.validate(str(temp_audio_file))
 
         assert result.is_valid is True
@@ -144,9 +144,9 @@ class TestAudioValidator:
 
     def test_reject_invalid_format(self, temp_dir: Path):
         """测试：拒绝无效格式"""
-        from src.security import AudioValidator, AudioValidationError
+        from src.security import SecureAudioValidator, AudioValidationError
 
-        validator = AudioValidator(allowed_formats=[])
+        validator = SecureAudioValidator(allowed_formats=[])
 
         # 创建假文件
         fake_file = temp_dir / "fake.wav"
@@ -159,9 +159,9 @@ class TestAudioValidator:
 
     def test_reject_oversized_file(self, temp_dir: Path):
         """测试：拒绝超大文件"""
-        from src.security import AudioValidator
+        from src.security import SecureAudioValidator
 
-        validator = AudioValidator(max_file_size_mb=0.001)  # 非常小的限制
+        validator = SecureAudioValidator(max_file_size_mb=0.001)  # 非常小的限制
 
         # 创建大文件
         large_file = temp_dir / "large.wav"
@@ -174,9 +174,9 @@ class TestAudioValidator:
 
     def test_validate_sample_rate_range(self, temp_dir: Path):
         """测试：验证采样率范围"""
-        from src.security import AudioValidator
+        from src.security import SecureAudioValidator
 
-        validator = AudioValidator(
+        validator = SecureAudioValidator(
             min_sample_rate=1000,
             max_sample_rate=96000
         )
@@ -190,9 +190,9 @@ class TestAudioValidator:
 
     def test_get_metadata(self, temp_audio_file: Path):
         """测试：获取音频元数据"""
-        from src.security import AudioValidator
+        from src.security import SecureAudioValidator
 
-        validator = AudioValidator()
+        validator = SecureAudioValidator()
         metadata = validator.get_metadata(str(temp_audio_file))
 
         if metadata:  # 依赖 soundfile
@@ -202,9 +202,9 @@ class TestAudioValidator:
 
     def test_validate_nonexistent_file(self):
         """测试：验证不存在的文件"""
-        from src.security import AudioValidator
+        from src.security import SecureAudioValidator
 
-        validator = AudioValidator()
+        validator = SecureAudioValidator()
         result = validator.validate("/nonexistent/file.wav")
 
         assert result.is_valid is False
@@ -212,9 +212,9 @@ class TestAudioValidator:
 
     def test_format_detection_wav(self, temp_dir: Path):
         """测试：WAV 格式检测"""
-        from src.security import AudioValidator, AudioFormat
+        from src.security import SecureAudioValidator, AudioFormat
 
-        validator = AudioValidator()
+        validator = SecureAudioValidator()
 
         # 创建 WAV 文件（带 RIFF 头）
         wav_file = temp_dir / "test.wav"
