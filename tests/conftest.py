@@ -14,6 +14,7 @@ import pytest
 # 确保 src 目录在 Python 路径中
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "src"))
 
 
 def pytest_configure(config):

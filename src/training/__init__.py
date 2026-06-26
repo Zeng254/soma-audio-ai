@@ -12,7 +12,7 @@ Modules:
 - cli: Command-line interface
 
 Example:
-    from src.training import TrainingConfig, AudioPreprocessor, RVCTrainer
+    from training import TrainingConfig, AudioPreprocessor, RVCTrainer
 
     # Configure
     config = TrainingConfig()
