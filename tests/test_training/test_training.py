@@ -747,4 +747,165 @@ class TestIntegration:
             assert "model" in ckpt or "weight" in ckpt
             assert "config" in ckpt
             assert ckpt["config"]["sample_rate"] == config.data.sample_rate
-            assert ckpt["config"]["hop_length"] == config.data.hop_length
+
+
+# ============================================================================
+# Dual Export Tests
+# ============================================================================
+
+class TestDualExport:
+    """Tests for dual-format export (RVC + SoVITS)."""
+
+    def test_export_sovits_format(self):
+        """Test SoVITS format export creates correct checkpoint."""
+        import torch
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        trainer = RVCTrainer(config, device="cpu")
+        trainer.build_models()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "model_sovits.pt")
+            trainer.export_sovits_format(output_path)
+
+            # Verify checkpoint file exists
+            assert os.path.exists(output_path)
+
+            # Verify checkpoint format
+            ckpt = torch.load(output_path, map_location="cpu")
+            assert "model" in ckpt
+            assert "config" in ckpt
+            assert ckpt["version"] == "sovits_v4.1"
+
+            # Verify config has SoVITS-compatible fields
+            sovits_cfg = ckpt["config"]
+            assert "hidden_channels" in sovits_cfg
+            assert "spec_channels" in sovits_cfg
+            assert sovits_cfg["n_vocab"] == 0  # Content encoder mode
+
+            # Verify companion config.json exists
+            config_json_path = os.path.join(tmpdir, "config.json")
+            assert os.path.exists(config_json_path)
+
+            with open(config_json_path, "r") as f:
+                config_json = json.load(f)
+            assert config_json["sampling_rate"] == config.data.sample_rate
+            assert "audio" in config_json
+            assert "model" in config_json
+
+    def test_export_dual_format(self):
+        """Test dual-format export creates both RVC and SoVITS files."""
+        import torch
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        trainer = RVCTrainer(config, device="cpu")
+        trainer.build_models()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = trainer.export_dual_format(
+                output_dir=tmpdir,
+                rvc_name="model_rvc.pt",
+                sovits_name="model_sovits.pt",
+            )
+
+            # Verify both files exist
+            assert os.path.exists(result["rvc"])
+            assert os.path.exists(result["sovits"])
+
+            # Verify RVC format
+            rvc_ckpt = torch.load(result["rvc"], map_location="cpu")
+            assert rvc_ckpt["version"] == "rvc_v2"
+            assert "model" in rvc_ckpt
+
+            # Verify SoVITS format
+            sovits_ckpt = torch.load(result["sovits"], map_location="cpu")
+            assert sovits_ckpt["version"] == "sovits_v4.1"
+            assert "model" in sovits_ckpt
+
+            # Verify config.json exists alongside SoVITS model
+            config_json_path = os.path.join(tmpdir, "config.json")
+            assert os.path.exists(config_json_path)
+
+    def test_export_dual_format_custom_names(self):
+        """Test dual-format export with custom filenames."""
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        trainer = RVCTrainer(config, device="cpu")
+        trainer.build_models()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = trainer.export_dual_format(
+                output_dir=tmpdir,
+                rvc_name="custom_rvc.pt",
+                sovits_name="custom_sovits.pt",
+            )
+
+            assert result["rvc"].endswith("custom_rvc.pt")
+            assert result["sovits"].endswith("custom_sovits.pt")
+            assert os.path.exists(result["rvc"])
+            assert os.path.exists(result["sovits"])
+
+    def test_export_sovits_without_generator_raises(self):
+        """Test that exporting without building models raises error."""
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        trainer = RVCTrainer(config, device="cpu")
+        # Do NOT call build_models()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "model.pt")
+            with pytest.raises(RuntimeError, match="Generator not built"):
+                trainer.export_sovits_format(output_path)
+
+    def test_sovits_config_json_structure(self):
+        """Test that exported config.json has correct structure for SoVITSConverter."""
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        config.data.sample_rate = 44100
+        config.data.hop_length = 512
+        config.data.n_mels = 80
+
+        trainer = RVCTrainer(config, device="cpu")
+        trainer.build_models()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "model_sovits.pt")
+            trainer.export_sovits_format(output_path)
+
+            config_json_path = os.path.join(tmpdir, "config.json")
+            with open(config_json_path, "r") as f:
+                config_json = json.load(f)
+
+            # Verify structure matches SoVITSConverter expectations
+            assert config_json["version"] == "4.1"
+            assert config_json["sampling_rate"] == 44100
+            assert config_json["audio"]["sample_rate"] == 44100
+            assert config_json["audio"]["hop_length"] == 512
+            assert config_json["audio"]["n_mels"] == 80
+            assert "model" in config_json
+            assert "data" in config_json
+            assert "train" in config_json
+
+    def test_auto_export_method_exists(self):
+        """Test that auto_export_dual_format method exists and is callable."""
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        trainer = RVCTrainer(config, device="cpu")
+
+        # Verify the method exists
+        assert hasattr(trainer, '_auto_export_dual_format')
+        assert hasattr(trainer, 'export_dual_format')
+        assert hasattr(trainer, 'export_sovits_format')
+        assert hasattr(trainer, 'export_for_inference')

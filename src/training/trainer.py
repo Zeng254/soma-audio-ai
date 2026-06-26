@@ -82,6 +82,7 @@ class MultiPeriodDiscriminator:
     def __call__(self, x):
         """Forward pass through all sub-discriminators."""
         import torch
+        import torch.nn as nn
         import torch.nn.functional as F
 
         results = []
@@ -623,6 +624,33 @@ class RVCTrainer:
 
         logger.info("Training complete!")
 
+        # Auto-export dual format models after training
+        self._auto_export_dual_format()
+
+    def _auto_export_dual_format(self):
+        """
+        Automatically export both RVC and SoVITS format models after training.
+
+        Exports are saved to the checkpoint directory with distinguishable names.
+        """
+        if self.generator is None:
+            logger.warning("Generator not built, skipping auto-export.")
+            return
+
+        ckpt_dir = Path(self.config.train.checkpoint_dir)
+        try:
+            result = self.export_dual_format(
+                output_dir=str(ckpt_dir),
+                rvc_name="model_rvc.pt",
+                sovits_name="model_sovits.pt",
+            )
+            logger.info(
+                "Auto-export complete: RVC=%s, SoVITS=%s",
+                result["rvc"], result["sovits"],
+            )
+        except Exception as e:
+            logger.error("Auto-export failed: %s", e)
+
     def _validate(self, dataloader) -> Dict[str, float]:
         """Run validation."""
         import torch
@@ -793,7 +821,142 @@ class RVCTrainer:
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         torch.save(checkpoint, str(output))
-        logger.info("Model exported for inference: %s", output_path)
+        logger.info("Model exported for RVC inference: %s", output_path)
+
+    def export_sovits_format(self, output_path: str) -> None:
+        """
+        Export model for SoVITS inference (compatible with SoVITSConverter).
+
+        Creates a VITS-format checkpoint and a companion config.json file
+        that can be loaded by SoVITSConverter.load_model().
+
+        The exported model uses the VITSGenerator architecture from
+        sovits_models.py, with weights mapped from the trained RVC generator.
+
+        Args:
+            output_path: Output file path (.pt).
+        """
+        import torch
+
+        if self.generator is None:
+            raise RuntimeError("Generator not built. Call build_models() first.")
+
+        # Build SoVITS-compatible config for VITSGenerator
+        sovits_config = {
+            "n_vocab": 0,  # Use content encoder (not text encoder)
+            "spec_channels": self.config.data.n_mels,
+            "hidden_channels": self.config.model.hidden_channels,
+            "out_channels": self.config.model.out_channels,
+            "n_speakers": 0,
+            "gin_channels": 0,
+            "use_flow": False,
+        }
+
+        # Create a VITSGenerator to get the correct state_dict structure
+        from src.voice_converters.sovits_models import VITSGenerator
+
+        vits_gen = VITSGenerator(
+            n_vocab=sovits_config["n_vocab"],
+            spec_channels=sovits_config["spec_channels"],
+            hidden_channels=sovits_config["hidden_channels"],
+            out_channels=sovits_config["out_channels"],
+            n_speakers=sovits_config["n_speakers"],
+            gin_channels=sovits_config["gin_channels"],
+            use_transformer_flows=sovits_config["use_flow"],
+        )
+
+        # Try to transfer compatible weights from RVC generator
+        rvc_state = self.generator.state_dict()
+        vits_state = vits_gen.state_dict()
+
+        # Map compatible layers (decoder layers are structurally similar)
+        transferred = 0
+        for key in vits_state:
+            if key in rvc_state and rvc_state[key].shape == vits_state[key].shape:
+                vits_state[key] = rvc_state[key]
+                transferred += 1
+
+        logger.info(
+            "SoVITS export: transferred %d/%d compatible weight tensors",
+            transferred, len(vits_state),
+        )
+
+        # Build full checkpoint in the format expected by
+        # create_vits_model_from_checkpoint()
+        checkpoint = {
+            "model": vits_state,
+            "config": sovits_config,
+            "version": "sovits_v4.1",
+            "epoch": self.current_epoch,
+            "step": self.global_step,
+        }
+
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(checkpoint, str(output))
+
+        # Also save a companion config.json (SoVITSConverter expects it)
+        config_json = {
+            "version": "4.1",
+            "sampling_rate": self.config.data.sample_rate,
+            "audio": {
+                "sample_rate": self.config.data.sample_rate,
+                "hop_length": self.config.data.hop_length,
+                "n_mels": self.config.data.n_mels,
+                "n_fft": self.config.data.n_fft,
+            },
+            "model": sovits_config,
+            "data": {
+                "sample_rate": self.config.data.sample_rate,
+                "hop_length": self.config.data.hop_length,
+            },
+            "train": {
+                "segment_size": self.config.data.segment_duration * self.config.data.sample_rate,
+            },
+        }
+
+        config_path = output.parent / "config.json"
+        import json
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config_json, f, indent=2, ensure_ascii=False)
+
+        logger.info(
+            "Model exported for SoVITS inference: %s (config: %s)",
+            output_path, config_path,
+        )
+
+    def export_dual_format(
+        self,
+        output_dir: str,
+        rvc_name: str = "model_rvc.pt",
+        sovits_name: str = "model_sovits.pt",
+    ) -> Dict[str, str]:
+        """
+        Export model in both RVC and SoVITS formats.
+
+        One training, two inference formats. Both files are saved to the
+        same output directory with distinguishable names.
+
+        Args:
+            output_dir: Output directory for both model files.
+            rvc_name: Filename for RVC format export.
+            sovits_name: Filename for SoVITS format export.
+
+        Returns:
+            Dict with keys 'rvc' and 'sovits' mapping to file paths.
+        """
+        output = Path(output_dir)
+        output.mkdir(parents=True, exist_ok=True)
+
+        rvc_path = str(output / rvc_name)
+        sovits_path = str(output / sovits_name)
+
+        self.export_for_inference(rvc_path)
+        self.export_sovits_format(sovits_path)
+
+        logger.info("Dual-format export complete: %s, %s", rvc_path, sovits_path)
+
+        return {"rvc": rvc_path, "sovits": sovits_path}
 
     def close(self):
         """Clean up resources."""

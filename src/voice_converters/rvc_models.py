@@ -93,17 +93,18 @@ class RVCGenerator(nn.Module):
         self.upsample_channels = []
         channel = hidden_channels
         for i, (rate, kernel_size) in enumerate(zip(upsample_rates, upsample_kernel_sizes)):
+            out_channel = upsample_initial_channel // (2 ** i)
             self.upsample_channels.append(channel)
             self.upsamples.append(
                 nn.ConvTranspose1d(
                     channel,
-                    upsample_initial_channel // (2 ** i),
+                    out_channel,
                     kernel_size,
                     stride=rate,
                     padding=(kernel_size - rate) // 2
                 )
             )
-            channel = upsample_initial_channel // (2 ** (i + 1))
+            channel = out_channel  # Next input = previous output
 
         # Final output convolution
         self.output_conv = nn.Conv1d(
@@ -422,6 +423,11 @@ class SimpleRVCModel(nn.Module):
         # Expand dimension to match
         if len(f0_encoded.shape) == 2:
             f0_encoded = f0_encoded.unsqueeze(1)
+        # Expand to pitch_encoder_dim channels to match RVCGenerator input
+        # RVCGenerator.input_conv expects in_channels + pitch_encoder_dim
+        target_dim = getattr(self, 'pitch_encoder_dim', 256)
+        if f0_encoded.shape[1] != target_dim:
+            f0_encoded = f0_encoded.expand(-1, target_dim, -1)
         return f0_encoded
 
     def inference(
