@@ -46,6 +46,7 @@ class VocoderWrapper:
         vocoder_type: str = "hifigan",
         device: str = "cpu",
         sample_rate: int = 40000,
+        hop_length: int = 160,
     ):
         """
         Initialize the vocoder wrapper.
@@ -55,11 +56,13 @@ class VocoderWrapper:
             vocoder_type: Type of vocoder ("hifigan", "nsf_hifigan").
             device: Device to load the vocoder on.
             sample_rate: Target sample rate for vocoder output.
+            hop_length: Hop length used in feature extraction (for frame rate calculation).
         """
         self.vocoder_path = vocoder_path
         self.vocoder_type = vocoder_type
         self.device = device
         self.sample_rate = sample_rate
+        self.hop_length = hop_length
         self.vocoder = None
         self._is_loaded = False
         self._using_fallback = False
@@ -73,6 +76,13 @@ class VocoderWrapper:
     def using_fallback(self) -> bool:
         """Whether the vocoder is using the fallback upsampler."""
         return self._using_fallback
+
+    def to(self, device: str) -> None:
+        """Move vocoder to specified device. P2-9: Device consistency."""
+        self.device = device
+        if self._vocoder_loaded and self._vocoder is not None:
+            import torch
+            self._vocoder.to(device)
 
     def load(self) -> None:
         """
@@ -110,7 +120,13 @@ class VocoderWrapper:
         """Load vocoder from checkpoint file."""
         import torch
 
-        checkpoint = torch.load(self.vocoder_path, map_location=self.device, weights_only=False)
+        # P1-4: Use weights_only=True for security, with fallback for older PyTorch
+        try:
+            checkpoint = torch.load(self.vocoder_path, map_location=self.device, weights_only=True)
+        except TypeError:
+            # Older PyTorch versions don't support weights_only parameter
+            logger.warning("PyTorch version doesn't support weights_only=True, using default loading")
+            checkpoint = torch.load(self.vocoder_path, map_location=self.device)
 
         # Try to detect vocoder type from checkpoint
         if isinstance(checkpoint, dict):
@@ -182,13 +198,18 @@ class VocoderWrapper:
                 if f0_t.ndim == 1:
                     f0_t = f0_t.unsqueeze(0)
 
-                # Match frame count
+                # P1-6: Use f0 directly from FeaturePipeline (already frame-aligned).
+                # Only adjust if frame counts differ due to edge cases.
                 target_frames = features_t.shape[-1]
                 if f0_t.shape[-1] != target_frames:
+                    logger.debug(
+                        "F0 frame count (%d) != feature frame count (%d), adjusting",
+                        f0_t.shape[-1], target_frames
+                    )
                     f0_t = torch.nn.functional.interpolate(
                         f0_t.unsqueeze(1),
                         size=target_frames,
-                        mode="linear",
+                        mode="nearest",  # Use nearest instead of linear to avoid precision loss
                     ).squeeze(1)
 
                 output = self.vocoder(features_t, f0_t.unsqueeze(1))
@@ -212,8 +233,10 @@ class VocoderWrapper:
 
         # features shape: (1, feature_dim, num_frames)
         num_frames = features.shape[-1]
-        # Upsample to target sample rate
-        target_samples = int(num_frames * self.sample_rate / 100.0)  # ~100 fps
+        # Calculate target samples based on actual hop_length
+        # frame_rate = sample_rate / hop_length
+        # target_samples = num_frames * hop_length
+        target_samples = num_frames * self.hop_length
 
         # Average across feature dims to get mono signal
         mono = features.mean(dim=1)  # (1, num_frames)
@@ -277,6 +300,7 @@ class RVCInference:
         hubert_model: str = "hubert_base",
         f0_method: str = "dio",
         hop_length: int = 160,
+        use_amp: bool = False,
     ):
         """
         Initialize the RVC inference pipeline.
@@ -290,6 +314,7 @@ class RVCInference:
             hubert_model: HuBERT model name for feature extraction.
             f0_method: F0 extraction method ("dio", "harvest", "yin", "pyin").
             hop_length: Hop length for feature extraction.
+            use_amp: Enable mixed precision (AMP) for faster GPU inference.
         """
         import torch
 
@@ -302,6 +327,7 @@ class RVCInference:
         self.sample_rate = sample_rate
         self.output_sample_rate = output_sample_rate
         self.hop_length = hop_length
+        self.use_amp = use_amp  # P2-10: Mixed precision support
 
         # Lazy-loaded components
         self._model_path = model_path
@@ -320,6 +346,7 @@ class RVCInference:
             vocoder_path=vocoder_path,
             device=self.device,
             sample_rate=output_sample_rate,
+            hop_length=hop_length,
         )
 
         # Load model if path provided
@@ -365,8 +392,13 @@ class RVCInference:
 
         self._model_path = path
 
+        # P1-4: Use weights_only=True for security, with fallback for older PyTorch
         try:
-            checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+            checkpoint = torch.load(path, map_location=self.device, weights_only=True)
+        except TypeError:
+            # Older PyTorch versions don't support weights_only parameter
+            logger.warning("PyTorch version doesn't support weights_only=True, using default loading")
+            checkpoint = torch.load(path, map_location=self.device)
         except Exception as e:
             raise RuntimeError(f"Failed to load model from {path}: {e}") from e
 
@@ -415,16 +447,29 @@ class RVCInference:
         if audio.ndim > 1:
             audio = audio.flatten()
 
+        # P0-2: Validate empty audio input
+        if len(audio) == 0:
+            raise ValueError("Input audio is empty (length 0). Please provide valid audio data.")
+
         # Step 1: Extract features
         features, f0 = self.feature_pipeline.extract(audio, sr)
 
-        # Step 2: Apply pitch transpose
-        if transpose != 0.0:
-            f0 = _transpose_f0(f0, transpose)
+        # P1-5: Warn if feature pipeline is using fallback mode
+        if hasattr(self.feature_pipeline, 'hubert') and self.feature_pipeline.hubert.using_fallback:
+            logger.warning(
+                "Feature pipeline is using fallback mode (not real HuBERT). "
+                "Output quality will be degraded. Consider loading a real HuBERT model."
+            )
 
-        # Step 3: Use custom F0 if provided
+        # Step 2: Apply pitch transpose
+        # P0-3: If both transpose and f0_curve are provided, apply transpose on top of f0_curve
         if f0_curve is not None:
-            f0 = f0_curve
+            f0 = f0_curve.copy()
+            if transpose != 0.0:
+                logger.info("Applying transpose=%f semitones on top of custom f0_curve", transpose)
+                f0 = _transpose_f0(f0, transpose)
+        elif transpose != 0.0:
+            f0 = _transpose_f0(f0, transpose)
 
         # Step 4: Run RVC model inference
         features_t = torch.from_numpy(features).float().to(self.device)
@@ -436,8 +481,15 @@ class RVCInference:
         if f0_t.ndim == 1:
             f0_t = f0_t.unsqueeze(0)
 
+        # P2-10: Mixed precision support
+        use_amp = self.use_amp and self.device != 'cpu'
+
         with torch.no_grad():
-            output = self.model.inference(features_t, f0_t)
+            if use_amp:
+                with torch.autocast(device_type='cuda', dtype=torch.float16):
+                    output = self.model.inference(features_t, f0_t)
+            else:
+                output = self.model.inference(features_t, f0_t)
 
         # Step 5: Convert to numpy
         output_features = output.squeeze(0).cpu().numpy()
@@ -456,7 +508,10 @@ class RVCInference:
         transpose: float = 0.0,
     ) -> List[np.ndarray]:
         """
-        Convert a batch of audio files.
+        Convert a batch of audio files using true batch processing.
+
+        Extracts features for all audio, pads to same length, runs model inference
+        once on the batch, then unpads and synthesizes each result.
 
         Args:
             audio_list: List of audio waveforms.
@@ -466,11 +521,193 @@ class RVCInference:
         Returns:
             List of converted audio waveforms.
         """
-        results = []
+        import torch
+
+        if not self._model_loaded:
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+
+        sr = sample_rate or self.sample_rate
+
+        # P0-2: Validate all inputs
+        for i, audio in enumerate(audio_list):
+            if audio.ndim > 1:
+                audio_list[i] = audio.flatten()
+            if len(audio_list[i]) == 0:
+                raise ValueError(f"Input audio at index {i} is empty (length 0).")
+
+        # P2-7: Extract features for all audio
+        all_features = []
+        all_f0 = []
+        max_frames = 0
+
         for audio in audio_list:
-            result = self.convert(audio, sample_rate=sample_rate, transpose=transpose)
-            results.append(result)
+            features, f0 = self.feature_pipeline.extract(audio, sr)
+            if transpose != 0.0:
+                f0 = _transpose_f0(f0, transpose)
+            all_features.append(features)
+            all_f0.append(f0)
+            max_frames = max(max_frames, features.shape[0])
+
+        # P2-7: Pad to same length
+        feature_dim = all_features[0].shape[1]
+        padded_features = np.zeros((len(audio_list), max_frames, feature_dim), dtype=np.float32)
+        padded_f0 = np.zeros((len(audio_list), max_frames), dtype=np.float32)
+        lengths = []
+
+        for i, (feat, f0) in enumerate(zip(all_features, all_f0)):
+            n_frames = feat.shape[0]
+            padded_features[i, :n_frames] = feat
+            padded_f0[i, :n_frames] = f0
+            lengths.append(n_frames)
+
+        # P2-7: Run model inference once on the batch
+        features_t = torch.from_numpy(padded_features).float().to(self.device)
+        f0_t = torch.from_numpy(padded_f0).float().to(self.device)
+
+        # P2-10: Mixed precision support
+        use_amp = self._use_amp and self.device != 'cpu'
+
+        with torch.no_grad():
+            if use_amp:
+                with torch.autocast(device_type='cuda', dtype=torch.float16):
+                    output = self.model.inference(features_t, f0_t)
+            else:
+                output = self.model.inference(features_t, f0_t)
+
+        # P2-7: Unpad and synthesize each result
+        output_np = output.cpu().numpy()
+        results = []
+
+        for i, n_frames in enumerate(lengths):
+            output_features = output_np[i, :, :n_frames]
+            f0 = all_f0[i][:n_frames]
+            output_audio = self._vocoder.synthesize(output_features, f0)
+            results.append(output_audio)
+
         return results
+
+    def convert_long_audio(
+        self,
+        audio: np.ndarray,
+        sample_rate: Optional[int] = None,
+        transpose: float = 0.0,
+        max_chunk_seconds: float = 30.0,
+        overlap_seconds: float = 0.5,
+    ) -> np.ndarray:
+        """
+        Convert very long audio by processing in chunks with crossfade overlap.
+
+        This avoids OOM issues when processing long audio files.
+
+        Args:
+            audio: Source audio waveform, shape (num_samples,).
+            sample_rate: Sample rate of input audio.
+            transpose: Pitch transpose in semitones.
+            max_chunk_seconds: Maximum chunk duration in seconds.
+            overlap_seconds: Overlap duration in seconds for crossfade.
+
+        Returns:
+            Converted audio waveform.
+        """
+        if not self._model_loaded:
+            raise RuntimeError("Model not loaded. Call load_model() first.")
+
+        sr = sample_rate or self.sample_rate
+
+        # Flatten audio to 1D
+        if audio.ndim > 1:
+            audio = audio.flatten()
+
+        # P0-2: Validate empty audio input
+        if len(audio) == 0:
+            raise ValueError("Input audio is empty (length 0). Please provide valid audio data.")
+
+        # P2-8: Calculate chunk sizes
+        chunk_samples = int(max_chunk_seconds * sr)
+        overlap_samples = int(overlap_seconds * sr)
+        step_samples = chunk_samples - overlap_samples
+
+        total_samples = len(audio)
+
+        # If audio fits in one chunk, just use convert()
+        if total_samples <= chunk_samples:
+            return self.convert(audio, sample_rate=sample_rate, transpose=transpose)
+
+        # Process in chunks
+        output_chunks = []
+        pos = 0
+
+        while pos < total_samples:
+            end = min(pos + chunk_samples, total_samples)
+            chunk = audio[pos:end]
+
+            # Convert chunk
+            output_chunk = self.convert(chunk, sample_rate=sample_rate, transpose=transpose)
+            output_chunks.append(output_chunk)
+
+            pos += step_samples
+
+        # P2-8: Crossfade overlap regions
+        if len(output_chunks) == 1:
+            return output_chunks[0]
+
+        result = output_chunks[0]
+        overlap_output_samples = int(overlap_seconds * self.output_sample_rate)
+
+        for i in range(1, len(output_chunks)):
+            chunk = output_chunks[i]
+
+            if overlap_output_samples > 0 and len(result) >= overlap_output_samples and len(chunk) >= overlap_output_samples:
+                # Crossfade overlap region
+                fade_out = np.linspace(1.0, 0.0, overlap_output_samples)
+                fade_in = np.linspace(0.0, 1.0, overlap_output_samples)
+
+                result[-overlap_output_samples:] = (
+                    result[-overlap_output_samples:] * fade_out +
+                    chunk[:overlap_output_samples] * fade_in
+                )
+                result = np.concatenate([result, chunk[overlap_output_samples:]])
+            else:
+                result = np.concatenate([result, chunk])
+
+        return result
+
+    def to(self, device: str) -> 'RVCInference':
+        """
+        Move all components to the specified device.
+
+        P2-9: Ensures device consistency across model, feature pipeline, and vocoder.
+
+        Args:
+            device: Target device ('cpu' or 'cuda').
+
+        Returns:
+            self, for chaining.
+        """
+        import torch
+
+        self.device = device
+
+        # Move model
+        if self._model_loaded and self.model is not None:
+            self.model.to(device)
+
+        # Recreate feature pipeline on new device
+        if self._feature_pipeline is not None:
+            from training.feature_extractor import FeaturePipeline
+            self._feature_pipeline = FeaturePipeline(
+                model_name=self._hubert_model,
+                device=device,
+                f0_method=self._f0_method,
+                sample_rate=self.sample_rate,
+                hop_length=self.hop_length,
+            )
+
+        # Move vocoder
+        self._vocoder.to(device)
+
+        logger.info("Moved all components to %s", device)
+        return self
 
     def save_output(
         self,
