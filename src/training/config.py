@@ -172,6 +172,8 @@ class TrainConfig:
     fm_loss_weight: float = 2.0
     # Multi-GPU
     device: str = "auto"  # "auto", "cpu", "cuda", "mps"
+    # Export format
+    export_format: str = "rvc"  # "rvc", "sovits", "dual"
 
     def validate(self) -> List[str]:
         """Validate configuration parameters."""
@@ -187,6 +189,10 @@ class TrainConfig:
         if self.use_amp and self.amp_dtype not in ("float16", "bfloat16"):
             errors.append(
                 f"amp_dtype must be 'float16' or 'bfloat16', got {self.amp_dtype}"
+            )
+        if self.export_format not in ("rvc", "sovits", "dual"):
+            errors.append(
+                f"export_format must be 'rvc', 'sovits', or 'dual', got {self.export_format}"
             )
         if self.mel_loss_weight < 0:
             errors.append(

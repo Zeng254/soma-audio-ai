@@ -365,6 +365,7 @@ class SimpleRVCModel(nn.Module):
         self.sample_rate = self.config.get('sample_rate', 40000)
         self.hop_length = self.config.get('hop_length', 512)
         self.mel_channels = self.config.get('mel_channels', 128)
+        self.pitch_encoder_dim = self.config.get('pitch_encoder_dim', 256)
 
         # Try to build network
         self.use_flow = self.config.get('use_flow', False)
@@ -379,7 +380,7 @@ class SimpleRVCModel(nn.Module):
                 in_channels=256,
                 out_channels=1,
                 embed_dim=256,
-                pitch_encoder_dim=256,
+                pitch_encoder_dim=self.pitch_encoder_dim,
             )
 
     def forward(self, x: torch.Tensor, f0: torch.Tensor) -> torch.Tensor:
@@ -466,6 +467,30 @@ def create_rvc_model_from_checkpoint(
     else:
         state_dict = checkpoint
         config = config or {}
+
+    config = config or {}
+
+    # Backward compatibility: detect pitch_encoder_dim from checkpoint state_dict
+    # Old checkpoints may have been trained with pitch_encoder_dim=1 (single channel F0)
+    # New checkpoints use pitch_encoder_dim=256 (expanded F0 encoding)
+    if state_dict and isinstance(state_dict, dict):
+        input_conv_key = "generator.input_conv.weight"
+        if input_conv_key in state_dict:
+            weight_shape = state_dict[input_conv_key].shape
+            # input_conv weight shape: [out_channels, in_channels + pitch_encoder_dim, kernel_size]
+            # in_channels=256, so pitch_encoder_dim = weight_shape[1] - 256
+            if len(weight_shape) >= 2:
+                detected_pitch_dim = weight_shape[1] - 256
+                if detected_pitch_dim > 0 and detected_pitch_dim != config.get('pitch_encoder_dim', 256):
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(
+                        "Detected old checkpoint format: pitch_encoder_dim=%d "
+                        "(expected 256). Adapting model architecture.",
+                        detected_pitch_dim
+                    )
+                    config = dict(config)  # Copy to avoid mutating original
+                    config['pitch_encoder_dim'] = detected_pitch_dim
 
     # CreateModel
     model = SimpleRVCModel(config)

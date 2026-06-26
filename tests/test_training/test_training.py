@@ -909,3 +909,178 @@ class TestDualExport:
         assert hasattr(trainer, 'export_dual_format')
         assert hasattr(trainer, 'export_sovits_format')
         assert hasattr(trainer, 'export_for_inference')
+
+    def test_export_format_config_default(self):
+        """Test that export_format defaults to 'rvc' for backward compatibility."""
+        from src.training.config import TrainingConfig
+
+        config = TrainingConfig()
+        assert config.train.export_format == "rvc"
+
+    def test_export_format_config_validation(self):
+        """Test that export_format validates allowed values."""
+        from src.training.config import TrainingConfig
+
+        config = TrainingConfig()
+        config.train.export_format = "sovits"
+        errors = config.validate()
+        assert not any("export_format" in e for e in errors)
+
+        config.train.export_format = "dual"
+        errors = config.validate()
+        assert not any("export_format" in e for e in errors)
+
+        config.train.export_format = "invalid"
+        errors = config.validate()
+        assert any("export_format" in e for e in errors)
+
+    def test_auto_export_respects_rvc_only_format(self):
+        """Test that auto-export with export_format='rvc' only exports RVC."""
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        config.train.export_format = "rvc"
+        trainer = RVCTrainer(config, device="cpu")
+        trainer.build_models()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer.config.train.checkpoint_dir = tmpdir
+            trainer._auto_export_dual_format()
+
+            # RVC file should exist
+            rvc_path = os.path.join(tmpdir, "model_rvc.pt")
+            assert os.path.exists(rvc_path)
+
+            # SoVITS file should NOT exist
+            sovits_path = os.path.join(tmpdir, "model_sovits.pt")
+            assert not os.path.exists(sovits_path)
+
+    def test_auto_export_respects_dual_format(self):
+        """Test that auto-export with export_format='dual' exports both formats."""
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        config.train.export_format = "dual"
+        trainer = RVCTrainer(config, device="cpu")
+        trainer.build_models()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer.config.train.checkpoint_dir = tmpdir
+            trainer._auto_export_dual_format()
+
+            # Both files should exist
+            rvc_path = os.path.join(tmpdir, "model_rvc.pt")
+            sovits_path = os.path.join(tmpdir, "model_sovits.pt")
+            assert os.path.exists(rvc_path)
+            assert os.path.exists(sovits_path)
+
+    def test_auto_export_sovits_failure_non_fatal(self):
+        """Test that SoVITS export failure does not crash training."""
+        from src.training.config import TrainingConfig
+        from src.training.trainer import RVCTrainer
+
+        config = TrainingConfig()
+        config.train.export_format = "dual"
+        trainer = RVCTrainer(config, device="cpu")
+        trainer.build_models()
+
+        # Monkey-patch export_sovits_format to raise an error
+        original_export = trainer.export_sovits_format
+
+        def failing_export(path):
+            raise RuntimeError("Simulated SoVITS export failure")
+
+        trainer.export_sovits_format = failing_export
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer.config.train.checkpoint_dir = tmpdir
+            # Should NOT raise even though SoVITS export fails
+            trainer._auto_export_dual_format()
+
+            # RVC file should still exist
+            rvc_path = os.path.join(tmpdir, "model_rvc.pt")
+            assert os.path.exists(rvc_path)
+
+        # Restore
+        trainer.export_sovits_format = original_export
+
+    def test_f0_backward_compat_old_checkpoint(self):
+        """Test backward compatibility: old checkpoint with 1-channel F0 encoding."""
+        import torch
+        from src.voice_converters.rvc_models import SimpleRVCModel, create_rvc_model_from_checkpoint
+
+        # Simulate an old checkpoint where pitch_encoder_dim was 1
+        # Create a model with pitch_encoder_dim=1
+        old_config = {"sample_rate": 40000, "hop_length": 512, "pitch_encoder_dim": 1}
+        old_model = SimpleRVCModel(old_config)
+
+        # Save as checkpoint
+        checkpoint = {
+            "model": old_model.state_dict(),
+            "config": {"sample_rate": 40000, "hop_length": 512},
+            "version": "rvc_v2",
+        }
+
+        # Load with create_rvc_model_from_checkpoint - should detect and adapt
+        loaded_model = create_rvc_model_from_checkpoint(checkpoint)
+
+        # Verify the loaded model has the correct pitch_encoder_dim
+        assert loaded_model.pitch_encoder_dim == 1
+
+        # Verify forward pass works with old checkpoint
+        x = torch.randn(1, 256, 10)
+        f0 = torch.ones(1, 1, 10) * 200.0
+        output = loaded_model(x, f0)
+        assert output.shape[0] == 1
+
+    def test_f0_backward_compat_new_checkpoint(self):
+        """Test that new checkpoints with pitch_encoder_dim=256 load correctly."""
+        import torch
+        from src.voice_converters.rvc_models import SimpleRVCModel, create_rvc_model_from_checkpoint
+
+        # Create a model with default pitch_encoder_dim=256
+        new_config = {"sample_rate": 40000, "hop_length": 512, "pitch_encoder_dim": 256}
+        new_model = SimpleRVCModel(new_config)
+
+        checkpoint = {
+            "model": new_model.state_dict(),
+            "config": {"sample_rate": 40000, "hop_length": 512, "pitch_encoder_dim": 256},
+            "version": "rvc_v2",
+        }
+
+        loaded_model = create_rvc_model_from_checkpoint(checkpoint)
+        assert loaded_model.pitch_encoder_dim == 256
+
+        # Verify forward pass works
+        x = torch.randn(1, 256, 10)
+        f0 = torch.ones(1, 1, 10) * 200.0
+        output = loaded_model(x, f0)
+        assert output.shape[0] == 1
+
+    def test_cli_export_format_option(self):
+        """Test that CLI export command accepts --format option."""
+        from src.training.cli import build_parser
+
+        parser = build_parser()
+
+        # Test default (no --format)
+        args = parser.parse_args(["export", "--checkpoint", "model.pt"])
+        assert args.format is None
+
+        # Test --format rvc
+        args = parser.parse_args(["export", "--checkpoint", "model.pt", "--format", "rvc"])
+        assert args.format == "rvc"
+
+        # Test --format sovits
+        args = parser.parse_args(["export", "--checkpoint", "model.pt", "--format", "sovits"])
+        assert args.format == "sovits"
+
+        # Test --format dual
+        args = parser.parse_args(["export", "--checkpoint", "model.pt", "--format", "dual"])
+        assert args.format == "dual"
+
+        # Test invalid format
+        with pytest.raises(SystemExit):
+            parser.parse_args(["export", "--checkpoint", "model.pt", "--format", "invalid"])

@@ -174,15 +174,37 @@ def cmd_export(args):
     else:
         config = TrainingConfig()
 
+    # Determine export format: CLI --format overrides config export_format
+    export_format = getattr(args, 'format', None) or config.train.export_format
+
     # Build trainer and load checkpoint
     trainer = RVCTrainer(config, device=args.device or "cpu")
     trainer.build_models()
     trainer.load_checkpoint(args.checkpoint)
 
-    # Export
-    output_path = args.output or "output/rvc_exported.pt"
-    trainer.export_for_inference(output_path)
-    logger.info("Model exported to: %s", output_path)
+    # Export based on format
+    output_dir = args.output or "output/rvc_exported"
+    output_path = Path(output_dir)
+
+    if export_format == "rvc":
+        rvc_path = output_path.with_suffix(".pt") if output_path.suffix == "" else output_path
+        trainer.export_for_inference(str(rvc_path))
+        logger.info("RVC model exported to: %s", rvc_path)
+    elif export_format == "sovits":
+        sovits_path = output_path.with_suffix(".pt") if output_path.suffix == "" else output_path
+        trainer.export_sovits_format(str(sovits_path))
+        logger.info("SoVITS model exported to: %s", sovits_path)
+    elif export_format == "dual":
+        output_path.mkdir(parents=True, exist_ok=True)
+        result = trainer.export_dual_format(
+            output_dir=str(output_path),
+            rvc_name="model_rvc.pt",
+            sovits_name="model_sovits.pt",
+        )
+        logger.info("Dual export complete: RVC=%s, SoVITS=%s", result["rvc"], result["sovits"])
+    else:
+        logger.error("Unknown export format: %s", export_format)
+        return None
 
     trainer.close()
     return output_path
@@ -306,6 +328,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument(
         "--device", type=str, default="cpu",
         help="Device for export (default: cpu)",
+    )
+    p_export.add_argument(
+        "--format", type=str, choices=["rvc", "sovits", "dual"], default=None,
+        help="Export format: 'rvc' (RVC only), 'sovits' (SoVITS only), 'dual' (both). "
+             "Defaults to config export_format or 'rvc' if not set.",
     )
 
     return parser

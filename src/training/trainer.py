@@ -629,7 +629,12 @@ class RVCTrainer:
 
     def _auto_export_dual_format(self):
         """
-        Automatically export both RVC and SoVITS format models after training.
+        Automatically export models after training based on config.export_format.
+
+        Export formats:
+        - 'rvc': Export RVC format only (mandatory, training fails if this errors)
+        - 'sovits': Export SoVITS format only (optional, errors are logged as warnings)
+        - 'dual': Export both RVC and SoVITS formats (RVC mandatory, SoVITS optional)
 
         Exports are saved to the checkpoint directory with distinguishable names.
         """
@@ -638,18 +643,28 @@ class RVCTrainer:
             return
 
         ckpt_dir = Path(self.config.train.checkpoint_dir)
-        try:
-            result = self.export_dual_format(
-                output_dir=str(ckpt_dir),
-                rvc_name="model_rvc.pt",
-                sovits_name="model_sovits.pt",
-            )
-            logger.info(
-                "Auto-export complete: RVC=%s, SoVITS=%s",
-                result["rvc"], result["sovits"],
-            )
-        except Exception as e:
-            logger.error("Auto-export failed: %s", e)
+        export_format = self.config.train.export_format
+
+        # RVC export (mandatory for 'rvc' and 'dual')
+        if export_format in ("rvc", "dual"):
+            rvc_path = ckpt_dir / "model_rvc.pt"
+            try:
+                self.export_for_inference(str(rvc_path))
+                logger.info("Auto-export RVC model: %s", rvc_path)
+            except Exception as e:
+                logger.error("RVC auto-export failed (mandatory): %s", e)
+                raise
+
+        # SoVITS export (optional for 'sovits' and 'dual')
+        if export_format in ("sovits", "dual"):
+            sovits_path = ckpt_dir / "model_sovits.pt"
+            try:
+                self.export_sovits_format(str(sovits_path))
+                logger.info("Auto-export SoVITS model: %s", sovits_path)
+            except Exception as e:
+                logger.warning(
+                    "SoVITS auto-export failed (optional, non-fatal): %s", e
+                )
 
     def _validate(self, dataloader) -> Dict[str, float]:
         """Run validation."""
