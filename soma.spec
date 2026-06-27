@@ -21,7 +21,7 @@ from pathlib import Path
 
 # Try to import PyInstaller hooks for torch
 try:
-    from PyInstaller.utils.hooks import collect_all, collect_submodules
+    from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dlls
     HAS_HOOKS = True
 except ImportError:
     HAS_HOOKS = False
@@ -299,11 +299,20 @@ excludes = [
 torch_datas = []
 torch_binaries = []
 torch_hiddenimports = []
+torch_dlls = []
 
 try:
     # Use PyInstaller's collect_all to get all torch components
+    # collect_all returns (datas, binaries, hiddenimports)
     torch_datas, torch_binaries, torch_hiddenimports = collect_all('torch')
     print(f"[SOMA] Collected torch: {len(torch_datas)} datas, {len(torch_binaries)} binaries, {len(torch_hiddenimports)} imports")
+    
+    # Also collect DLLs explicitly for Windows
+    try:
+        torch_dlls = collect_dlls('torch')
+        print(f"[SOMA] Collected torch DLLs: {len(torch_dlls)} files")
+    except Exception as e:
+        print(f"[SOMA] Warning: Could not collect torch DLLs: {e}")
 except Exception as e:
     print(f"[SOMA] Warning: Could not collect torch: {e}")
     # Fallback: add basic torch submodules
@@ -316,18 +325,21 @@ except Exception as e:
 # Combine all hidden imports
 all_hiddenimports = hiddenimports + torch_hiddenimports
 
+# Combine all binaries (torch_binaries + torch_dlls)
+all_binaries = torch_binaries + torch_dlls
+
 a = Analysis(
     ['launcher.py'],
     pathex=[
         str(project_root),
         str(src_dir),
     ],
-    binaries=torch_binaries,
+    binaries=all_binaries,
     datas=datas + torch_datas,
     hiddenimports=all_hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['runtime_hook_torch.py'],
     excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

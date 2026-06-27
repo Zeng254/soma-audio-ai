@@ -303,9 +303,14 @@ class TrainingPage(BasePage):
         self._log("训练已被用户停止", "warning")
     
     def _training_worker(self):
-        """后台训练工作线程（演示模式）。
+        """后台训练工作线程。
         
-        注意：当前为演示模式，每轮次仅等待0.1秒模拟训练过程。
+        此方法会：
+        1. 验证 torch 是否正确安装
+        2. 检测可用设备（CPU/CUDA/MPS）
+        3. 运行演示训练循环（实际训练需调用 trainer.py）
+        
+        注意：当前为演示模式，每轮次等待0.5秒模拟训练过程。
         实际训练需要：
         1. 准备数据集（音频文件 + 标注）
         2. 配置模型参数
@@ -318,6 +323,36 @@ class TrainingPage(BasePage):
         - 训练轮次
         通常需要数小时到数天不等。
         """
+        # 第一步：验证 torch 是否正确安装
+        try:
+            import torch
+            torch_available = True
+            device_info = f"torch {torch.__version__}"
+            
+            # 检测可用设备
+            if torch.cuda.is_available():
+                device_info += f" | CUDA: {torch.cuda.get_device_name(0)}"
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                device_info += " | MPS: Apple Silicon"
+            else:
+                device_info += " | CPU only"
+            
+            self.after(0, self._log, f"PyTorch 验证成功: {device_info}", "success")
+            
+            # 运行一个简单的 tensor 操作来验证 torch 工作正常
+            self.after(0, self._log, "正在验证 PyTorch 计算能力...", "info")
+            x = torch.randn(100, 100)
+            y = torch.matmul(x, x.T)
+            self.after(0, self._log, f"PyTorch 计算验证通过 (矩阵乘法结果形状: {y.shape})", "success")
+            
+        except ImportError as e:
+            torch_available = False
+            self.after(0, self._log, f"PyTorch 未安装或导入失败: {e}", "error")
+            self.after(0, self._log, "将以模拟模式运行（无实际计算）", "warning")
+        except Exception as e:
+            torch_available = False
+            self.after(0, self._log, f"PyTorch 验证失败: {e}", "error")
+        
         epochs = self.epochs.get()
         
         for epoch in range(1, epochs + 1):
@@ -331,7 +366,8 @@ class TrainingPage(BasePage):
                 break
             
             # 演示模式：模拟训练工作（实际训练需调用 trainer.py）
-            threading.Event().wait(0.1)
+            # 每轮次等待0.5秒，让用户能看到进度变化
+            threading.Event().wait(0.5)
             
             # 更新进度
             progress = (epoch / epochs) * 100
@@ -354,6 +390,10 @@ class TrainingPage(BasePage):
     
     def _training_complete(self):
         """处理训练完成。"""
+        # 检查 widget 是否仍然存在
+        if not self.winfo_exists():
+            return
+            
         self._is_training = False
         self.start_btn.configure(state=tk.NORMAL)
         self.pause_btn.configure(state=tk.DISABLED)
@@ -363,15 +403,28 @@ class TrainingPage(BasePage):
         self._log("训练成功完成！", "success")
         self._log(f"模型已保存为: {self.model_name.get()}", "success")
         
-        # 显示完成弹窗
-        model_name = self.model_name.get() or "未命名模型"
-        messagebox.showinfo(
-            "训练完成",
-            f"🎉 语音克隆训练已完成！\n\n"
-            f"模型名称: {model_name}\n"
-            f"输出目录: {self._get_output_dir()}\n\n"
-            f"您可以在「模型管理」页面查看已训练的模型。"
-        )
+        # 显示完成弹窗 - 使用 after 确保在主线程执行
+        def show_completion_popup():
+            if not self.winfo_exists():
+                return
+            model_name = self.model_name.get() or "未命名模型"
+            output_dir = self._get_output_dir()
+            
+            # 创建弹窗
+            result = messagebox.showinfo(
+                "训练完成",
+                f"语音克隆训练已完成！\n\n"
+                f"模型名称: {model_name}\n"
+                f"输出目录: {output_dir}\n\n"
+                f"您可以在「模型管理」页面查看已训练的模型。"
+            )
+            
+            # 询问是否打开输出目录
+            if messagebox.askyesno("打开文件夹", "是否打开输出文件夹？"):
+                self._open_output_folder()
+        
+        # 延迟 100ms 显示弹窗，确保 UI 更新完成
+        self.after(100, show_completion_popup)
     
     def _get_output_dir(self) -> str:
         """获取输出目录。"""
@@ -382,6 +435,28 @@ class TrainingPage(BasePage):
         import os
         default_dir = os.path.join(os.path.expanduser("~"), ".soma", "output")
         return default_dir
+    
+    def _open_output_folder(self):
+        """打开输出文件夹。"""
+        import os
+        import subprocess
+        import sys
+        
+        output_dir = self._get_output_dir()
+        
+        # 确保目录存在
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 根据操作系统打开文件夹
+        try:
+            if sys.platform == 'win32':
+                os.startfile(output_dir)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', output_dir])
+            else:
+                subprocess.Popen(['xdg-open', output_dir])
+        except Exception as e:
+            self._log(f"无法打开文件夹: {e}", "error")
     
     def _log(self, message: str, level: str = "info"):
         """向日志输出添加消息。"""
