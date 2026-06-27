@@ -21,11 +21,19 @@ Usage:
 """
 
 import logging
+import os
+from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Default cache directory for offline model storage
+DEFAULT_MODEL_CACHE_DIR = os.environ.get(
+    "SOMA_MODEL_CACHE_DIR",
+    os.path.expanduser("~/.cache/soma/models")
+)
 
 
 class HuBERTFeatureExtractor:
@@ -67,6 +75,7 @@ class HuBERTFeatureExtractor:
         device: str = "cpu",
         model_path: Optional[str] = None,
         lazy_load: bool = True,
+        cache_dir: Optional[str] = None,
     ):
         """
         Initialize the HuBERT feature extractor.
@@ -74,13 +83,28 @@ class HuBERTFeatureExtractor:
         Args:
             model_name: Name of the pretrained model or "custom" if using model_path.
             device: Device to load the model on ("cpu" or "cuda").
-            model_path: Optional path to a local model checkpoint.
+            model_path: Optional path to a local model checkpoint. If provided,
+                the model will be loaded from this path instead of downloading.
             lazy_load: If True (default), defer model loading until first extract() call.
                 If False, load the model immediately (may be slow or fail without network/GPU).
+            cache_dir: Optional directory for caching downloaded models. Defaults to
+                SOMA_MODEL_CACHE_DIR env var or ~/.cache/soma/models.
+
+        Offline Usage:
+            For offline environments, provide a local model path:
+            >>> extractor = HuBERTFeatureExtractor(
+            ...     model_name="contentvec",
+            ...     model_path="/path/to/local/hubert_base.pt"
+            ... )
+
+            Or set the cache directory and pre-download models:
+            >>> os.environ["SOMA_MODEL_CACHE_DIR"] = "/path/to/cache"
+            >>> extractor = HuBERTFeatureExtractor(model_name="hubert_base")
         """
         self.model_name = model_name
         self.device = device
         self.model_path = model_path
+        self.cache_dir = cache_dir or DEFAULT_MODEL_CACHE_DIR
         self.model = None
         self._feature_dim = 256  # Default
         self._is_loaded = False
@@ -139,8 +163,19 @@ class HuBERTFeatureExtractor:
         """Load Facebook HuBERT Base model."""
         import torch
 
+        # Strategy 1: Try loading from local cache first (offline support)
+        cache_path = Path(self.cache_dir) / "hubert_base.pt"
+        if cache_path.exists():
+            logger.info(f"Loading HuBERT Base from local cache: {cache_path}")
+            try:
+                self._load_from_path(str(cache_path))
+                if self.model is not None:
+                    return
+            except Exception as e:
+                logger.warning(f"Failed to load from cache: {e}")
+
+        # Strategy 2: Try loading via torch.hub (requires internet)
         try:
-            # Try loading via torch.hub (requires internet)
             model = torch.hub.load(
                 "facebookresearch/fairseq",
                 "hubert_base",
@@ -153,9 +188,22 @@ class HuBERTFeatureExtractor:
             self.model = model
             self._feature_dim = 256
             logger.info("Loaded HuBERT Base model via torch.hub")
+
+            # Cache the model for offline use
+            self._cache_model(model, cache_path)
         except Exception as e:
             logger.warning(f"torch.hub load failed: {e}. Trying alternative load method.")
             self._load_hubert_from_torchaudio()
+
+    def _cache_model(self, model, cache_path: Path) -> None:
+        """Cache a model to local storage for offline use."""
+        try:
+            import torch
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(model.state_dict(), cache_path)
+            logger.info(f"Cached model to: {cache_path}")
+        except Exception as e:
+            logger.warning(f"Failed to cache model: {e}")
 
     def _load_hubert_from_torchaudio(self) -> None:
         """Load HuBERT model via torchaudio as fallback."""
@@ -299,12 +347,26 @@ class HuBERTFeatureExtractor:
         This is NOT a real HuBERT model but provides a consistent fallback.
 
         Uses a local torch.Generator to avoid polluting the global random state.
+
+        OFFLINE USAGE:
+            If you're in an offline environment and need real HuBERT features:
+            1. Download the model on a connected machine:
+               - HuBERT Base: https://dl.fbaipublicfiles.com/hubert/hubert_base.pt
+               - Contentvec: https://huggingface.co/lj1995/VoiceConversionWebUI/resolve/main/hubert_base.pt
+            2. Transfer the .pt file to your offline machine
+            3. Initialize with model_path parameter:
+               extractor = HuBERTFeatureExtractor(
+                   model_name="contentvec",
+                   model_path="/path/to/hubert_base.pt"
+               )
         """
         import torch
 
         logger.warning(
-            "Using deterministic fallback feature extractor. "
-            "For best results, install torchaudio or provide a HuBERT checkpoint."
+            "⚠️  Using deterministic fallback feature extractor (NOT real HuBERT). "
+            "Feature quality will be significantly reduced. "
+            "For offline environments, provide a local model via model_path parameter. "
+            "See docstring for download instructions."
         )
         self.model = None
         self._feature_dim = 256

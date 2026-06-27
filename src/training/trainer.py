@@ -962,6 +962,13 @@ class RVCTrainer:
         """
         Export model for SoVITS inference (compatible with SoVITSConverter).
 
+        .. warning::
+            **EXPERIMENTAL FEATURE**: RVC→SoVITS weight migration is experimental
+            and may not produce optimal results. The architectures differ significantly
+            (RVC uses Generator with HiFi-GAN decoder, SoVITS uses VITS with full
+            encoder-decoder-encoder structure). Only decoder layers can be partially
+            transferred. For best SoVITS results, train directly with SoVITS architecture.
+
         Creates a VITS-format checkpoint and a companion config.json file
         that can be loaded by SoVITSConverter.load_model().
 
@@ -972,6 +979,12 @@ class RVCTrainer:
             output_path: Output file path (.pt).
         """
         import torch
+
+        logger.warning(
+            "⚠️  export_sovits_format is EXPERIMENTAL. "
+            "RVC→SoVITS weight migration may not produce optimal results. "
+            "For best SoVITS quality, train directly with SoVITS architecture."
+        )
 
         if self.generator is None:
             raise RuntimeError("Generator not built. Call build_models() first.")

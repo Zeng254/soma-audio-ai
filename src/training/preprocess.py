@@ -76,11 +76,34 @@ def load_audio(
 
 
 def _resample(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarray:
-    """Resample audio using linear interpolation."""
+    """
+    Resample audio to target sample rate.
+
+    Uses scipy.signal.resample when available for higher quality resampling
+    (FFT-based, better frequency preservation). Falls back to linear
+    interpolation when scipy is not available.
+
+    Args:
+        audio: Input audio array.
+        orig_sr: Original sample rate.
+        target_sr: Target sample rate.
+
+    Returns:
+        Resampled audio as float32 array.
+    """
     if orig_sr == target_sr:
         return audio
-    duration = len(audio) / orig_sr
-    target_len = int(duration * target_sr)
+
+    target_len = int(len(audio) * target_sr / orig_sr)
+
+    # Try scipy first for higher quality resampling
+    try:
+        from scipy.signal import resample
+        return resample(audio, target_len).astype(np.float32)
+    except ImportError:
+        pass
+
+    # Fallback to linear interpolation
     indices = np.linspace(0, len(audio) - 1, target_len)
     return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
 

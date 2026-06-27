@@ -80,9 +80,9 @@ class VocoderWrapper:
     def to(self, device: str) -> None:
         """Move vocoder to specified device. P2-9: Device consistency."""
         self.device = device
-        if self._vocoder_loaded and self._vocoder is not None:
+        if self._is_loaded and self.vocoder is not None:
             import torch
-            self._vocoder.to(device)
+            self.vocoder.to(device)
 
     def load(self) -> None:
         """

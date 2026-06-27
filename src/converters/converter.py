@@ -275,17 +275,28 @@ class AudioConverter:
         output_path.mkdir(parents=True, exist_ok=True)
         
         results = {}
-        # P2-18: Track used output filenames to detect collisions
-        used_names: dict = {}  # stem -> count
+        # P2-18: Track used output filenames to detect and resolve collisions.
+        # When multiple input files from different directories have the same stem
+        # (e.g., "song.wav" from both "/dir1/" and "/dir2/"), they would otherwise
+        # overwrite each other in the output directory.
+        #
+        # used_names maps: filename_stem -> occurrence_count
+        # - First occurrence: count=0, output as "{stem}.{format}"
+        # - Second occurrence: count=1, output as "{stem}_1.{format}"
+        # - Third occurrence: count=2, output as "{stem}_2.{format}"
+        # - And so on...
+        used_names: dict = {}
         
         for input_file in input_files:
             input_name = Path(input_file).stem
             
             # P2-18: Detect filename collision and add sequence suffix
             if input_name in used_names:
+                # Collision detected: increment count and add suffix
                 used_names[input_name] += 1
                 output_file = str(output_path / f"{input_name}_{used_names[input_name]}.{output_format}")
             else:
+                # First occurrence: no suffix needed
                 used_names[input_name] = 0
                 output_file = str(output_path / f"{input_name}.{output_format}")
             

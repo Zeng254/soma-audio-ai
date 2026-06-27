@@ -291,7 +291,7 @@ class TrainingConfig:
         config = cls.from_dict(data)
         errors = config.validate()
         if errors:
-            logger.warning("Configuration validation warnings: %s", errors)
+            raise ValueError(f"Configuration validation errors: {errors}")
         logger.info("Configuration loaded from %s", path)
         return config
 
@@ -299,4 +299,4 @@ class TrainingConfig:
         """Validate configuration after initialization."""
         errors = self.validate()
         if errors:
-            logger.warning("TrainingConfig validation warnings: %s", errors)
+            raise ValueError(f"TrainingConfig validation errors: {errors}")

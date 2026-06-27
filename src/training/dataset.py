@@ -20,13 +20,27 @@ from .config import DataConfig
 
 logger = logging.getLogger(__name__)
 
+# Try to import torch Dataset for inheritance
+try:
+    from torch.utils.data import Dataset as TorchDataset
+    _TORCH_AVAILABLE = True
+except ImportError:
+    _TORCH_AVAILABLE = False
+    # Create a dummy base class if torch is not available
+    class TorchDataset:
+        """Dummy base class when torch is not available."""
+        pass
 
-class RVCDataset:
+
+class RVCDataset(TorchDataset):
     """
     PyTorch-compatible Dataset for RVC training.
 
     Loads preprocessed numpy segments from a directory and provides
     fixed-length tensors for training.
+
+    Inherits from torch.utils.data.Dataset when PyTorch is available,
+    making it fully compatible with torch.utils.data.DataLoader.
     """
 
     def __init__(
