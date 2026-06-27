@@ -48,6 +48,8 @@ class RVCDataset(TorchDataset):
         data_dir: str,
         config: Optional[DataConfig] = None,
         segment_length: Optional[int] = None,
+        file_list: Optional[List[Path]] = None,
+        cache_in_memory: bool = False,
     ):
         """
         Initialize dataset.
@@ -57,9 +59,17 @@ class RVCDataset(TorchDataset):
             config: Data configuration. Uses defaults if None.
             segment_length: Fixed segment length in samples. If None,
                 computed from config.segment_duration * config.sample_rate.
+            file_list: Optional list of specific file paths to use. If None,
+                all .npy files in data_dir are loaded. This enables proper
+                train/validation splitting when used with split_dataset().
+            cache_in_memory: If True, cache loaded audio segments in memory
+                to avoid repeated disk I/O. Useful for small datasets that
+                fit in RAM. Default is False.
         """
         self.config = config or DataConfig()
         self.data_dir = Path(data_dir)
+        self.cache_in_memory = cache_in_memory
+        self._cache: Dict[int, np.ndarray] = {}
 
         if segment_length is None:
             self.segment_length = int(
@@ -68,15 +78,18 @@ class RVCDataset(TorchDataset):
         else:
             self.segment_length = segment_length
 
-        # Collect all .npy files
-        self.file_paths: List[Path] = sorted(self.data_dir.glob("*.npy"))
+        # P1-5: Use provided file_list if available, otherwise collect all .npy files
+        if file_list is not None:
+            self.file_paths: List[Path] = sorted(file_list)
+        else:
+            self.file_paths = sorted(self.data_dir.glob("*.npy"))
 
         if not self.file_paths:
             logger.warning("No .npy files found in %s", data_dir)
 
         logger.info(
-            "RVCDataset initialized: %d segments from %s (segment_length=%d)",
-            len(self.file_paths), data_dir, self.segment_length,
+            "RVCDataset initialized: %d segments from %s (segment_length=%d, cache=%s)",
+            len(self.file_paths), data_dir, self.segment_length, cache_in_memory,
         )
 
     def __len__(self) -> int:
@@ -97,8 +110,15 @@ class RVCDataset(TorchDataset):
         if idx >= len(self.file_paths):
             raise IndexError(f"Index {idx} out of range (dataset size: {len(self)})")
 
-        # Load segment
-        audio = np.load(str(self.file_paths[idx]))
+        # P1-6: Use cache if enabled to avoid repeated disk I/O
+        if self.cache_in_memory and idx in self._cache:
+            audio = self._cache[idx]
+        else:
+            # Load segment from disk
+            audio = np.load(str(self.file_paths[idx]))
+            # Cache if enabled
+            if self.cache_in_memory:
+                self._cache[idx] = audio
 
         # Pad or truncate to fixed length
         audio = self._fix_length(audio)

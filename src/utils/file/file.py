@@ -108,6 +108,13 @@ class FileOps:
         - Private ranges: 10.x, 172.16-31.x, 192.168.x
         - Link-local: 169.254.x
         - IPv6 loopback / link-local
+        
+        Note: This check resolves the hostname once and validates the IP.
+        There is a known TOCTOU (Time-of-Check-Time-of-Use) window between
+        this DNS resolution and the subsequent requests.get() call, which
+        could theoretically be exploited via DNS rebinding attacks. For
+        high-security environments, consider using a custom DNS resolver
+        or connection pool that reuses the resolved IP address.
         """
         import ipaddress
         from urllib.parse import urlparse

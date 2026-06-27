@@ -109,8 +109,8 @@ def cmd_train(args):
         logger.error("No training data found in %s", data_dir)
         return None
 
-    # Create datasets and dataloaders
-    train_dataset = RVCDataset(data_dir, config.data)
+    # P1-5: Pass file_list to RVCDataset to ensure train/val split is respected
+    train_dataset = RVCDataset(data_dir, config.data, file_list=train_files)
     train_loader = create_dataloader(
         train_dataset,
         batch_size=config.train.batch_size,
@@ -121,7 +121,7 @@ def cmd_train(args):
 
     val_loader = None
     if val_files:
-        val_dataset = RVCDataset(data_dir, config.data)
+        val_dataset = RVCDataset(data_dir, config.data, file_list=val_files)
         val_loader = create_dataloader(
             val_dataset,
             batch_size=config.train.batch_size,

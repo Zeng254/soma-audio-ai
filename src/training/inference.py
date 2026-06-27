@@ -659,16 +659,27 @@ class RVCInference:
         for i in range(1, len(output_chunks)):
             chunk = output_chunks[i]
 
-            if overlap_output_samples > 0 and len(result) >= overlap_output_samples and len(chunk) >= overlap_output_samples:
-                # Crossfade overlap region
-                fade_out = np.linspace(1.0, 0.0, overlap_output_samples)
-                fade_in = np.linspace(0.0, 1.0, overlap_output_samples)
-
-                result[-overlap_output_samples:] = (
-                    result[-overlap_output_samples:] * fade_out +
-                    chunk[:overlap_output_samples] * fade_in
+            # P0-2: Boundary protection - compute actual overlap length
+            # to handle cases where the last chunk is shorter than expected
+            if overlap_output_samples > 0:
+                actual_overlap = min(
+                    overlap_output_samples,
+                    len(result),
+                    len(chunk)
                 )
-                result = np.concatenate([result, chunk[overlap_output_samples:]])
+            else:
+                actual_overlap = 0
+
+            if actual_overlap > 0:
+                # Crossfade overlap region
+                fade_out = np.linspace(1.0, 0.0, actual_overlap)
+                fade_in = np.linspace(0.0, 1.0, actual_overlap)
+
+                result[-actual_overlap:] = (
+                    result[-actual_overlap:] * fade_out +
+                    chunk[:actual_overlap] * fade_in
+                )
+                result = np.concatenate([result, chunk[actual_overlap:]])
             else:
                 result = np.concatenate([result, chunk])
 

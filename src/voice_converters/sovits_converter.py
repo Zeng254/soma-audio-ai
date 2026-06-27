@@ -1289,8 +1289,12 @@ class SoVITSConverter(BaseVoiceConverter, LazyImportMixin, EngineCapability):
             # Load diffusion model checkpoint
             checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
             
-            # Diffusion model instantiation is deferred until needed.
+            # P1-7: Diffusion model instantiation is deferred until needed.
             # The checkpoint is stored for lazy initialization during inference.
+            # TODO: Implement diffusion model instantiation and inference.
+            # The checkpoint contains weights for a diffusion-based acoustic model
+            # that can optionally enhance voice conversion quality. Full implementation
+            # requires integrating the diffusion scheduler and sampling loop.
             self._diffusion_checkpoint = checkpoint
             
         except Exception:

@@ -89,18 +89,21 @@ class MultiPeriodDiscriminator:
         results = []
         features = []
 
-        for disc in self.discriminators:
+        # P1-4: Use enumerate for efficiency, cache period value at loop start
+        for idx, disc in enumerate(self.discriminators):
+            # Cache period value for this iteration
+            period = self.periods[idx][0]
+
             # Reshape 1D to 2D using period
             batch_size = x.shape[0]
             length = x.shape[-1]
-            # Pad to make divisible
-            pad_len = (self.periods[len(results)][0] - length % self.periods[len(results)][0]) % self.periods[len(results)][0]
+            # Pad to make divisible by period
+            pad_len = (period - length % period) % period
             if pad_len > 0:
                 x_padded = F.pad(x, (0, pad_len))
             else:
                 x_padded = x
 
-            period = self.periods[len(results)][0]
             n_frames = x_padded.shape[-1] // period
             x_2d = x_padded.view(batch_size, 1, n_frames, period)
 
