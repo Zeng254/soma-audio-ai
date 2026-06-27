@@ -4,6 +4,14 @@ Separation page for SOMA GUI.
 Provides interface for audio source separation (vocals, instruments, etc.).
 Enhanced with: parameter controls, progress display, file info, drag-drop zone,
 directory memory, auto-naming, completion dialog, and error handling.
+
+Code quality fixes applied:
+- SettingsManager singleton for thread-safe settings access
+- threading.Event for cancel mechanism (unified with comparison page)
+- Widget alive guards on all after() callbacks
+- Unified UI reset logic after processing completes/stops/errors
+- Common open_folder utility
+- File info loading in background thread
 """
 
 import tkinter as tk
@@ -11,34 +19,10 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 import os
 import time
-import json
 from typing import Optional, List
 from gui.pages.base import BasePage
 from gui.styles import Colors, Fonts
-
-
-# Persistent settings file for remembering last directory
-_SETTINGS_FILE = os.path.join(os.path.expanduser("~"), ".soma_gui_settings.json")
-
-
-def _load_settings() -> dict:
-    """Load persistent GUI settings from disk."""
-    try:
-        with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _save_settings(data: dict):
-    """Save persistent GUI settings to disk."""
-    try:
-        existing = _load_settings()
-        existing.update(data)
-        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
-    except OSError:
-        pass  # Silently ignore save failures
+from gui.utils import SettingsManager, open_folder, AUDIO_FILETYPES
 
 
 class SeparationPage(BasePage):
@@ -87,8 +71,13 @@ class SeparationPage(BasePage):
         """Initialize the separation page."""
         super().__init__(parent, app)
 
+        # Settings manager (singleton, thread-safe)
+        self._settings = SettingsManager()
+
+        # Cancel event (threading.Event for unified cancel mechanism)
+        self._cancel_event = threading.Event()
+
         # State
-        self._is_processing = False
         self._processing_thread: Optional[threading.Thread] = None
         self._start_time: Optional[float] = None
         self._elapsed_timer_id: Optional[str] = None
@@ -111,9 +100,10 @@ class SeparationPage(BasePage):
         self.file_info_filesize = tk.StringVar(value="--")
         self.file_info_filename = tk.StringVar(value="No file selected")
 
-        # Remembered last directory
-        settings = _load_settings()
-        self._last_directory = settings.get("separation_last_dir", os.path.expanduser("~"))
+        # Remembered last directory (from SettingsManager)
+        self._last_directory = self._settings.get(
+            "separation_last_dir", os.path.expanduser("~")
+        )
 
         # Output files
         self._output_files: List[str] = []
@@ -409,25 +399,17 @@ class SeparationPage(BasePage):
 
     def _browse_source(self):
         """Browse for source audio file, remembering last directory."""
-        filetypes = [
-            ("Audio files", "*.wav *.mp3 *.flac *.ogg"),
-            ("WAV files", "*.wav"),
-            ("MP3 files", "*.mp3"),
-            ("FLAC files", "*.flac"),
-            ("All files", "*.*")
-        ]
-
         filename = filedialog.askopenfilename(
             title="Select Audio File",
-            filetypes=filetypes,
+            filetypes=AUDIO_FILETYPES,
             initialdir=self._last_directory,
         )
 
         if filename:
             self.source_path.set(filename)
-            # Remember directory
+            # Remember directory via SettingsManager
             self._last_directory = os.path.dirname(filename)
-            _save_settings({"separation_last_dir": self._last_directory})
+            self._settings.set("separation_last_dir", self._last_directory)
 
             # Auto-set output directory if empty
             if not self.output_dir.get():
@@ -442,9 +424,9 @@ class SeparationPage(BasePage):
         if dirname:
             self.output_dir.set(dirname)
             self._last_directory = dirname
-            _save_settings({"separation_last_dir": dirname})
+            self._settings.set("separation_last_dir", dirname)
 
-    # ── File Info Update ───────────────────────────────────────────────
+    # ── File Info Update (background thread) ───────────────────────────
 
     def _on_source_path_changed(self, *args):
         """Triggered when source_path variable changes."""
@@ -455,7 +437,7 @@ class SeparationPage(BasePage):
         if not os.path.isfile(filepath):
             self._reset_file_info()
             return
-        # Update file info in background thread
+        # Update file info in background thread (fix #12)
         threading.Thread(target=self._load_file_info, args=(filepath,), daemon=True).start()
 
     def _reset_file_info(self):
@@ -467,7 +449,7 @@ class SeparationPage(BasePage):
         self.file_info_filesize.set("--")
 
     def _load_file_info(self, filepath: str):
-        """Load and display audio file information."""
+        """Load and display audio file information (runs in background thread)."""
         try:
             # File size
             size_bytes = os.path.getsize(filepath)
@@ -477,8 +459,8 @@ class SeparationPage(BasePage):
                 size_str = f"{size_bytes / 1024 / 1024:.2f} MB"
 
             filename = os.path.basename(filepath)
-            self.after(0, lambda: self.file_info_filename.set(filename))
-            self.after(0, lambda: self.file_info_filesize.set(size_str))
+            self.safe_after(0, lambda: self.file_info_filename.set(filename))
+            self.safe_after(0, lambda: self.file_info_filesize.set(size_str))
 
             # Try to read audio metadata
             try:
@@ -489,19 +471,19 @@ class SeparationPage(BasePage):
                 seconds = int(duration_sec % 60)
                 duration_str = f"{minutes}:{seconds:02d}"
 
-                self.after(0, lambda: self.file_info_duration.set(duration_str))
-                self.after(0, lambda: self.file_info_samplerate.set(f"{info.samplerate} Hz"))
+                self.safe_after(0, lambda: self.file_info_duration.set(duration_str))
+                self.safe_after(0, lambda: self.file_info_samplerate.set(f"{info.samplerate} Hz"))
                 ch_map = {1: "Mono", 2: "Stereo"}
-                self.after(0, lambda: self.file_info_channels.set(
+                self.safe_after(0, lambda: self.file_info_channels.set(
                     ch_map.get(info.channels, f"{info.channels} ch")
                 ))
             except Exception:
-                self.after(0, lambda: self.file_info_duration.set("N/A"))
-                self.after(0, lambda: self.file_info_samplerate.set("N/A"))
-                self.after(0, lambda: self.file_info_channels.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_duration.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_samplerate.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_channels.set("N/A"))
 
         except Exception:
-            self.after(0, self._reset_file_info)
+            self.safe_after(0, self._reset_file_info)
 
     # ── Backend Description ────────────────────────────────────────────
 
@@ -529,17 +511,20 @@ class SeparationPage(BasePage):
 
     def _tick_elapsed(self):
         """Update the elapsed time display every second."""
-        if self._start_time is not None and self._is_processing:
+        if self._start_time is not None and not self._cancel_event.is_set():
             elapsed = time.time() - self._start_time
             minutes = int(elapsed // 60)
             seconds = int(elapsed % 60)
             self.elapsed_var.set(f"{minutes}:{seconds:02d}")
-            self._elapsed_timer_id = self.after(1000, self._tick_elapsed)
+            self._elapsed_timer_id = self.safe_after(1000, self._tick_elapsed)
 
     def _stop_elapsed_timer(self):
         """Stop the elapsed time counter."""
         if self._elapsed_timer_id is not None:
-            self.after_cancel(self._elapsed_timer_id)
+            try:
+                self.after_cancel(self._elapsed_timer_id)
+            except Exception:
+                pass
             self._elapsed_timer_id = None
         if self._start_time is not None:
             elapsed = time.time() - self._start_time
@@ -547,6 +532,20 @@ class SeparationPage(BasePage):
             seconds = int(elapsed % 60)
             self.elapsed_var.set(f"{minutes}:{seconds:02d} (done)")
             self._start_time = None
+
+    # ── Unified UI Reset (fix #5) ──────────────────────────────────────
+
+    def _reset_ui_after_processing(self, status_text: str):
+        """
+        Unified UI state reset after processing completes, stops, or errors.
+
+        This ensures all buttons, progress bar, and status text are
+        consistently reset regardless of how processing ended.
+        """
+        self.start_btn.configure(state=tk.NORMAL)
+        self.stop_btn.configure(state=tk.DISABLED)
+        self.status_var.set(status_text)
+        self._stop_elapsed_timer()
 
     # ── Separation Logic ───────────────────────────────────────────────
 
@@ -572,8 +571,8 @@ class SeparationPage(BasePage):
             messagebox.showerror("Error", f"Cannot create output directory:\n{e}")
             return
 
-        # Update UI state
-        self._is_processing = True
+        # Reset cancel event and update UI state
+        self._cancel_event.clear()
         self.start_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
         self.status_var.set("Starting...")
@@ -609,13 +608,10 @@ class SeparationPage(BasePage):
         self._processing_thread.start()
 
     def _stop_separation(self):
-        """Stop the separation process."""
-        self._is_processing = False
-        self.start_btn.configure(state=tk.NORMAL)
-        self.stop_btn.configure(state=tk.DISABLED)
-        self.status_var.set("Stopped")
-        self._stop_elapsed_timer()
-        self._log("Separation stopped by user.")
+        """Stop the separation process via cancel event."""
+        self._cancel_event.set()
+        self._log("Stop requested...")
+        # UI will be reset by the worker thread's finally block
 
     def _separation_worker(self):
         """Background worker for separation."""
@@ -630,25 +626,24 @@ class SeparationPage(BasePage):
 
             # Map backend names to AudioSeparator backend parameter
             if backend_str == "librosa":
-                # librosa uses HPSS-based separation (no deep learning backend)
                 sep_backend = "auto"
             elif backend_str == "demucs":
                 sep_backend = "demucs"
             elif backend_str == "hpss":
-                sep_backend = "auto"  # Will fall back to HPSS
+                sep_backend = "auto"
             else:
                 sep_backend = "auto"
 
-            self.after(0, lambda: self._log("Initializing AudioSeparator..."))
-            self.after(0, lambda: self.status_var.set("Loading model..."))
-            self.after(0, lambda: self.progress_var.set(5))
+            self.safe_after(0, lambda: self._log("Initializing AudioSeparator..."))
+            self.safe_after(0, lambda: self.status_var.set("Loading model..."))
+            self.safe_after(0, lambda: self.progress_var.set(5))
 
             separator = AudioSeparator(backend=sep_backend)
 
             # Load audio
-            self.after(0, lambda: self._log("Loading audio..."))
-            self.after(0, lambda: self.status_var.set("Loading audio..."))
-            self.after(0, lambda: self.progress_var.set(15))
+            self.safe_after(0, lambda: self._log("Loading audio..."))
+            self.safe_after(0, lambda: self.status_var.set("Loading audio..."))
+            self.safe_after(0, lambda: self.progress_var.set(15))
 
             import numpy as np
             import soundfile as sf
@@ -657,40 +652,39 @@ class SeparationPage(BasePage):
             if audio.ndim == 1:
                 audio = np.stack([audio, audio], axis=-1)  # Mono to stereo
 
-            self.after(0, lambda: self._log(f"Audio loaded: {audio.shape[0]} samples, {sr}Hz"))
-            self.after(0, lambda: self.progress_var.set(25))
+            self.safe_after(0, lambda: self._log(f"Audio loaded: {audio.shape[0]} samples, {sr}Hz"))
+            self.safe_after(0, lambda: self.progress_var.set(25))
 
             # Optional dereverberation
             if dereverb_on:
-                self.after(0, lambda: self._log("Applying dereverberation..."))
-                self.after(0, lambda: self.status_var.set("Dereverberating..."))
-                self.after(0, lambda: self.progress_var.set(35))
+                self.safe_after(0, lambda: self._log("Applying dereverberation..."))
+                self.safe_after(0, lambda: self.status_var.set("Dereverberating..."))
+                self.safe_after(0, lambda: self.progress_var.set(35))
                 audio = separator.dereverb(audio)
-                self.after(0, lambda: self._log("Dereverberation complete."))
-                self.after(0, lambda: self.progress_var.set(45))
+                self.safe_after(0, lambda: self._log("Dereverberation complete."))
+                self.safe_after(0, lambda: self.progress_var.set(45))
 
-            if not self._is_processing:
+            if self._cancel_event.is_set():
                 return
 
             # Perform separation
             if mode_str == "dereverb":
-                # Dereverb-only mode (no stem separation)
-                self.after(0, lambda: self._log("Performing dereverberation..."))
-                self.after(0, lambda: self.status_var.set("Dereverberating..."))
-                self.after(0, lambda: self.progress_var.set(60))
+                self.safe_after(0, lambda: self._log("Performing dereverberation..."))
+                self.safe_after(0, lambda: self.status_var.set("Dereverberating..."))
+                self.safe_after(0, lambda: self.progress_var.set(60))
                 result_audio = separator.dereverb(audio)
                 results = [("dereverb", result_audio)]
             elif mode_str == "hpss":
-                self.after(0, lambda: self._log("Performing HPSS separation..."))
-                self.after(0, lambda: self.status_var.set("Separating (HPSS)..."))
-                self.after(0, lambda: self.progress_var.set(60))
+                self.safe_after(0, lambda: self._log("Performing HPSS separation..."))
+                self.safe_after(0, lambda: self.status_var.set("Separating (HPSS)..."))
+                self.safe_after(0, lambda: self.progress_var.set(60))
                 harmonic, percussive = separator.hpss(audio, sample_rate=sr)
                 results = [("harmonic", harmonic), ("percussive", percussive)]
             else:
                 mode_enum = SeparationMode(mode_str)
-                self.after(0, lambda: self._log(f"Performing {mode_str} separation..."))
-                self.after(0, lambda: self.status_var.set("Separating..."))
-                self.after(0, lambda: self.progress_var.set(60))
+                self.safe_after(0, lambda: self._log(f"Performing {mode_str} separation..."))
+                self.safe_after(0, lambda: self.status_var.set("Separating..."))
+                self.safe_after(0, lambda: self.progress_var.set(60))
                 stems = separator.separate(audio, mode=mode_enum, sample_rate=sr)
 
                 # Map stem names
@@ -703,18 +697,18 @@ class SeparationPage(BasePage):
 
                 results = list(zip(stem_names, stems))
 
-            if not self._is_processing:
+            if self._cancel_event.is_set():
                 return
 
-            self.after(0, lambda: self._log("Separation complete, saving files..."))
-            self.after(0, lambda: self.status_var.set("Saving files..."))
-            self.after(0, lambda: self.progress_var.set(80))
+            self.safe_after(0, lambda: self._log("Separation complete, saving files..."))
+            self.safe_after(0, lambda: self.status_var.set("Saving files..."))
+            self.safe_after(0, lambda: self.progress_var.set(80))
 
             # Save output files
             source_name = os.path.splitext(os.path.basename(self.source_path.get()))[0]
 
             for stem_name, stem_audio in results:
-                if not self._is_processing:
+                if self._cancel_event.is_set():
                     return
                 output_path = os.path.join(
                     self.output_dir.get(),
@@ -722,36 +716,38 @@ class SeparationPage(BasePage):
                 )
                 sf.write(output_path, stem_audio, sr)
                 self._output_files.append(output_path)
-                self.after(0, lambda p=output_path: self._log(f"Saved: {os.path.basename(p)}"))
-                self.after(0, lambda p=output_path: self.output_listbox.insert(
+                self.safe_after(0, lambda p=output_path: self._log(f"Saved: {os.path.basename(p)}"))
+                self.safe_after(0, lambda p=output_path: self.output_listbox.insert(
                     tk.END, os.path.basename(p)
                 ))
 
-            self.after(0, lambda: self.progress_var.set(100))
-            self.after(0, self._separation_complete)
+            self.safe_after(0, lambda: self.progress_var.set(100))
+            self.safe_after(0, self._separation_complete)
 
         except ImportError as e:
             err_msg = f"Missing dependency: {e}"
-            self.after(0, lambda: self._log(f"ERROR: {err_msg}"))
-            self.after(0, lambda: self._log("Please install required packages."))
-            self.after(0, lambda: self.status_var.set("Error"))
-            self.after(0, self._separation_error)
+            self.safe_after(0, lambda: self._log(f"ERROR: {err_msg}"))
+            self.safe_after(0, lambda: self._log("Please install required packages."))
+            self.safe_after(0, lambda: self.status_var.set("Error"))
+            self.safe_after(0, self._separation_error)
 
         except Exception as e:
             err_msg = str(e)
-            self.after(0, lambda: self._log(f"ERROR: {err_msg}"))
-            self.after(0, lambda: self.status_var.set("Error"))
-            self.after(0, self._separation_error)
+            self.safe_after(0, lambda: self._log(f"ERROR: {err_msg}"))
+            self.safe_after(0, lambda: self.status_var.set("Error"))
+            self.safe_after(0, self._separation_error)
+
+        finally:
+            # Always reset UI state when worker exits (fix #5)
+            if self._cancel_event.is_set():
+                self.safe_after(0, lambda: self._reset_ui_after_processing("Stopped"))
+                self.safe_after(0, lambda: self._log("Separation stopped by user."))
 
     # ── Completion / Error ─────────────────────────────────────────────
 
     def _separation_complete(self):
         """Handle separation completion."""
-        self._is_processing = False
-        self.start_btn.configure(state=tk.NORMAL)
-        self.stop_btn.configure(state=tk.DISABLED)
-        self.status_var.set("Completed")
-        self._stop_elapsed_timer()
+        self._reset_ui_after_processing("Completed")
 
         self._log("")
         self._log(f"Done! {len(self._output_files)} file(s) saved.")
@@ -768,10 +764,7 @@ class SeparationPage(BasePage):
 
     def _separation_error(self):
         """Handle separation error."""
-        self._is_processing = False
-        self.start_btn.configure(state=tk.NORMAL)
-        self.stop_btn.configure(state=tk.DISABLED)
-        self._stop_elapsed_timer()
+        self._reset_ui_after_processing("Error")
 
         messagebox.showerror(
             "Separation Failed",
@@ -781,21 +774,9 @@ class SeparationPage(BasePage):
         )
 
     def _open_output_folder(self):
-        """Open the output folder in file explorer."""
+        """Open the output folder in file explorer using common utility."""
         if self.output_dir.get() and os.path.exists(self.output_dir.get()):
-            import subprocess
-            import sys
-
-            folder = os.path.normpath(self.output_dir.get())
-
-            try:
-                if sys.platform == 'win32':
-                    subprocess.run(['explorer', folder], check=False)
-                elif sys.platform == 'darwin':
-                    subprocess.run(['open', folder], check=False)
-                else:
-                    subprocess.run(['xdg-open', folder], check=False)
-            except Exception:
+            if not open_folder(self.output_dir.get()):
                 messagebox.showwarning("Warning", "Could not open folder.")
         else:
             messagebox.showwarning("Warning", "Output folder does not exist.")

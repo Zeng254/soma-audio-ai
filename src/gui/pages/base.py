@@ -147,6 +147,40 @@ class BasePage(ttk.Frame, ABC):
         widget.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         return row
+
+    def _widget_alive(self) -> bool:
+        """Check if this page widget still exists (not destroyed)."""
+        try:
+            return self.winfo_exists()
+        except Exception:
+            return False
+
+    def safe_after(self, delay_ms: int, callback):
+        """
+        Schedule a callback with widget-alive guard.
+
+        If this page has been destroyed before the callback fires,
+        the callback is silently skipped. Prevents crashes when
+        background threads try to update UI after page switch.
+
+        Args:
+            delay_ms: Delay in milliseconds.
+            callback: Callable to execute on the main thread.
+
+        Returns:
+            The after() ID, or None if widget is destroyed.
+        """
+        if not self._widget_alive():
+            return None
+
+        def _guarded():
+            if self._widget_alive():
+                try:
+                    callback()
+                except Exception:
+                    pass
+
+        return self.after(delay_ms, _guarded)
     
     def create_button_row(self, parent: tk.Widget, buttons: list) -> ttk.Frame:
         """

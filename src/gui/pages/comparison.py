@@ -1,60 +1,69 @@
 """
 Comparison page for SOMA GUI.
 
-Provides interface for comparing voice conversion results across different
-models and parameter settings. Supports multi-task queue, A/B playback
-switching, batch export, and configuration save/load.
+Provides interface for A/B testing voice conversion results with different
+parameter configurations. Users can queue multiple comparison tasks, run
+them in parallel, and compare the outputs side by side.
 
-Layout:
-- Left panel:  Source audio + parameter configuration + action buttons
-- Right panel: Task list (top) + result comparison / playback (bottom)
+Code quality fixes applied:
+- SettingsManager singleton for thread-safe settings access
+- threading.Lock for task list (fix #6)
+- subprocess.Popen for all platforms (fix #3, Windows A/B stop)
+- Widget alive guards via safe_after (fix #4)
+- Output filename includes task ID (fix #9)
+- Model search depth limit (fix #10)
+- Shared parameter constants (fix #11)
+- Model scan with mtime cache (fix #7)
 """
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
 import os
-import time
 import json
-import uuid
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor, Future
-from typing import Optional, List, Dict, Any
+import time
+import uuid
+from typing import Optional, List, Dict
+from concurrent.futures import ThreadPoolExecutor
 from gui.pages.base import BasePage
 from gui.styles import Colors, Fonts
+from gui.utils import (
+    SettingsManager, open_folder, AUDIO_FILETYPES,
+    FEATURE_EXTRACTORS, F0_METHODS, DEVICES, SAMPLE_RATES,
+    DEFAULT_SAMPLE_RATE, DEFAULT_F0_METHOD, DEFAULT_FEATURE_EXTRACTOR,
+    DEFAULT_DEVICE, PITCH_MIN, PITCH_MAX,
+    MODEL_CACHE_TTL, MODEL_SEARCH_MAX_DEPTH,
+)
 
 
-# ── Persistent helpers ─────────────────────────────────────────────────
-
-_SETTINGS_FILE = os.path.join(os.path.expanduser("~"), ".soma_gui_settings.json")
-
-
-def _load_settings() -> dict:
-    try:
-        with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _save_settings(data: dict):
-    try:
-        existing = _load_settings()
-        existing.update(data)
-        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
-    except OSError:
-        pass
-
-
-# ── Task status constants ──────────────────────────────────────────────
-
+# Task status constants
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
 STATUS_DONE = "done"
 STATUS_FAILED = "failed"
 STATUS_CANCELLED = "cancelled"
+
+# Status display mapping
+STATUS_DISPLAY = {
+    STATUS_QUEUED: "\u23f3 Queued",
+    STATUS_RUNNING: "\u2699 Running...",
+    STATUS_DONE: "\u2705 Done",
+    STATUS_FAILED: "\u274c Failed",
+    STATUS_CANCELLED: "\u23f9 Cancelled",
+}
+
+# Column definitions for task list
+COLUMNS = ("id", "model", "pitch", "f0", "feature", "status", "time")
+COLUMN_HEADINGS = {
+    "id": "ID", "model": "Model", "pitch": "Pitch",
+    "f0": "F0", "feature": "Feature", "status": "Status", "time": "Time",
+}
+COLUMN_WIDTHS = {
+    "id": 40, "model": 120, "pitch": 50,
+    "f0": 60, "feature": 70, "status": 90, "time": 60,
+}
 
 
 class ComparisonPage(BasePage):
@@ -63,514 +72,829 @@ class ComparisonPage(BasePage):
 
     Features:
     - Multi-task queue with independent parameter sets
-    - Background thread pool for parallel processing
-    - A/B audio switching via system player
+    - Thread pool for parallel processing (max_workers=2)
+    - Per-task config: model, pitch, F0 method, feature extractor,
+      cluster ratio, device, sample rate
+    - Task list with status tracking
+    - Batch start, cancel all, clear done
+    - Duplicate last task config for quick setup
+    - A/B audio switching
+    - Playback via system default player (subprocess.Popen, cross-platform)
+    - Volume control
     - Batch export with auto-naming
-    - Configuration save / load
+    - Config save/load as JSON
     """
 
     PAGE_NAME = "Compare"
-    PAGE_ICON = "\U0001f500"  # 🔀
-    PAGE_DESCRIPTION = "Compare results"
+    PAGE_ICON = "\U0001f504"
+    PAGE_DESCRIPTION = "A/B compare results"
 
-    # Options mirrors the inference page
-    FEATURE_EXTRACTORS = ["hubert", "contentvec"]
-    F0_METHODS = ["dio", "harvest", "rmvpe", "crepe"]
-    DEVICES = ["auto", "cpu", "cuda"]
-    SAMPLE_RATES = ["16000", "32000", "40000", "44100", "48000"]
+    # Use shared constants (fix #11)
+    FEATURE_EXTRACTORS = FEATURE_EXTRACTORS
+    F0_METHODS = F0_METHODS
+    DEVICES = DEVICES
+    SAMPLE_RATES = SAMPLE_RATES
 
     def __init__(self, parent: tk.Widget, app: Optional[object] = None):
+        """Initialize the comparison page."""
         super().__init__(parent, app)
 
-        # ── State ──
-        self._tasks: List[Dict[str, Any]] = []  # task queue
-        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cmp")
-        self._playback_process: Optional[subprocess.Popen] = None
-        self._task_id_counter = 0
+        # Settings manager (singleton, thread-safe)
+        self._settings = SettingsManager()
 
-        # ── Tkinter variables ──
+        # Task list with lock (fix #6)
+        self._tasks: List[Dict] = []
+        self._tasks_lock = threading.Lock()
+        self._task_counter = 0
+
+        # Thread pool for parallel task execution
+        self._executor = ThreadPoolExecutor(max_workers=2)
+
+        # Playback state (cross-platform, fix #3)
+        self._current_player: Optional[subprocess.Popen] = None
+        self._playback_lock = threading.Lock()
+
+        # State
+        self._processing = False
+        self._start_time: Optional[float] = None
+        self._elapsed_timer_id: Optional[str] = None
+
+        # Model cache (fix #7)
+        self._model_cache: List[str] = []
+        self._model_cache_time: float = 0.0
+
+        # Variables
         self.source_path = tk.StringVar()
-        self.cfg_model = tk.StringVar()
-        self.cfg_pitch = tk.IntVar(value=0)
-        self.cfg_f0 = tk.StringVar(value="dio")
-        self.cfg_feature = tk.StringVar(value="hubert")
-        self.cfg_cluster = tk.DoubleVar(value=0.0)
-        self.cfg_device = tk.StringVar(value="auto")
-        self.cfg_sr = tk.StringVar(value="40000")
+        self.output_dir = tk.StringVar()
+        self.selected_model = tk.StringVar()
+        self.pitch_shift = tk.IntVar(value=0)
+        self.feature_extractor = tk.StringVar(value=DEFAULT_FEATURE_EXTRACTOR)
+        self.f0_method = tk.StringVar(value=DEFAULT_F0_METHOD)
+        self.device = tk.StringVar(value=DEFAULT_DEVICE)
+        self.output_sample_rate = tk.StringVar(value=DEFAULT_SAMPLE_RATE)
+        self.cluster_ratio = tk.DoubleVar(value=0.0)
+        self.elapsed_var = tk.StringVar(value="0:00")
 
-        # File info
-        self.file_info_text = tk.StringVar(value="No source loaded")
+        # File info variables
+        self.file_info_duration = tk.StringVar(value="--")
+        self.file_info_samplerate = tk.StringVar(value="--")
+        self.file_info_channels = tk.StringVar(value="--")
+        self.file_info_filesize = tk.StringVar(value="--")
+        self.file_info_filename = tk.StringVar(value="No file selected")
 
-        # Cluster label
-        self.cluster_label_var = tk.StringVar(value="0.00")
-
-        # Available models
-        self._available_models: List[str] = []
-
-        # Remembered directory
-        settings = _load_settings()
-        self._last_dir = settings.get("comparison_last_dir", os.path.expanduser("~"))
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  Widget creation
-    # ═══════════════════════════════════════════════════════════════════
+        # Remembered last directory
+        self._last_directory = self._settings.get(
+            "comparison_last_dir", os.path.expanduser("~")
+        )
 
     def _create_widgets(self):
+        """Create comparison page widgets."""
+        # Title section
         self.create_title_section(
             self.content_frame,
             "Effect Comparison",
-            "Compare voice conversion results across models and parameters"
+            "Compare voice conversion results with different parameters"
         )
 
-        # Two-column layout
-        main = ttk.Frame(self.content_frame, style="TFrame")
-        main.pack(fill=tk.BOTH, expand=True)
+        # Main content: left (config) + right (tasks + results)
+        main_frame = ttk.Frame(self.content_frame, style="TFrame")
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-        left = ttk.Frame(main, style="TFrame")
-        left.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 8))
+        # Left column - Configuration
+        left_frame = ttk.Frame(main_frame, style="TFrame")
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=False, padx=(0, 10))
+        left_frame.configure(width=320)
 
-        right = ttk.Frame(main, style="TFrame")
-        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(8, 0))
+        self._create_dropzone_section(left_frame)
+        self._create_file_info_section(left_frame)
+        self._create_task_config_section(left_frame)
+        self._create_action_section(left_frame)
 
-        # ── Left: source + config + actions ──
-        self._build_source_card(left)
-        self._build_config_card(left)
-        self._build_action_card(left)
+        # Right column - Tasks and Results
+        right_frame = ttk.Frame(main_frame, style="TFrame")
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
 
-        # ── Right: task list + results ──
-        self._build_task_list_card(right)
-        self._build_result_card(right)
+        self._create_task_list_section(right_frame)
+        self._create_playback_section(right_frame)
+        self._create_result_log_section(right_frame)
+        self._create_export_section(right_frame)
 
-    # ── Source audio ───────────────────────────────────────────────────
+    # ── Drop Zone ──────────────────────────────────────────────────────
 
-    def _build_source_card(self, parent: tk.Widget):
+    def _create_dropzone_section(self, parent: tk.Widget):
+        """Create a visual drop zone for source audio files."""
         card = self.create_card(parent, "Source Audio")
 
+        # Drop zone visual
+        self.dropzone = tk.Frame(
+            card, bg=Colors.BG_INPUT,
+            highlightbackground=Colors.BORDER, highlightthickness=2,
+            padx=20, pady=10,
+        )
+        self.dropzone.pack(fill=tk.X, pady=(0, 10))
+
+        tk.Label(
+            self.dropzone, text="\U0001f3a4",
+            font=(Fonts.FAMILY, 24), bg=Colors.BG_INPUT, fg=Colors.TEXT_MUTED,
+        ).pack(pady=(5, 0))
+
+        tk.Label(
+            self.dropzone,
+            text="Click 'Browse' or drag audio file here",
+            font=(Fonts.FAMILY, Fonts.SIZE_SMALL),
+            bg=Colors.BG_INPUT, fg=Colors.TEXT_SECONDARY,
+        ).pack(pady=(0, 5))
+
+        # Path entry with browse button
         path_frame = ttk.Frame(card, style="Card.TFrame")
         path_frame.pack(fill=tk.X)
 
-        ttk.Entry(path_frame, textvariable=self.source_path).pack(
-            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
-        ttk.Button(path_frame, text="Browse...", style="Secondary.TButton",
-                   command=self._browse_source).pack(side=tk.RIGHT)
+        path_entry = ttk.Entry(path_frame, textvariable=self.source_path)
+        path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
-        ttk.Label(card, textvariable=self.file_info_text,
-                  style="Muted.TLabel").pack(anchor=tk.W, pady=(8, 0))
+        browse_btn = ttk.Button(
+            path_frame, text="Browse...",
+            style="Secondary.TButton", command=self._browse_source
+        )
+        browse_btn.pack(side=tk.RIGHT)
 
-    # ── Parameter config ───────────────────────────────────────────────
+        # Bind trace to update file info
+        self.source_path.trace_add("write", self._on_source_path_changed)
 
-    def _build_config_card(self, parent: tk.Widget):
-        card = self.create_card(parent, "Task Parameters")
+    # ── File Info ──────────────────────────────────────────────────────
 
-        rows = [
-            ("Model", self._build_model_row),
-            ("Pitch", self._build_pitch_row),
-            ("F0 Method", self._build_f0_row),
-            ("Feature Ext.", self._build_feature_row),
-            ("Cluster Ratio", self._build_cluster_row),
-            ("Device", self._build_device_row),
-            ("Sample Rate", self._build_sr_row),
+    def _create_file_info_section(self, parent: tk.Widget):
+        """Create file information display section."""
+        card = self.create_card(parent, "File Info")
+
+        info_frame = ttk.Frame(card, style="Card.TFrame")
+        info_frame.pack(fill=tk.X)
+
+        info_items = [
+            ("File", self.file_info_filename),
+            ("Duration", self.file_info_duration),
+            ("Sample Rate", self.file_info_samplerate),
+            ("Channels", self.file_info_channels),
+            ("File Size", self.file_info_filesize),
         ]
 
-        for label_text, builder in rows:
-            row = ttk.Frame(card, style="Card.TFrame")
-            row.pack(fill=tk.X, pady=3)
-            ttk.Label(row, text=label_text + ":", style="Card.TLabel", width=13).pack(side=tk.LEFT)
-            builder(row)
+        for label_text, var in info_items:
+            row = ttk.Frame(info_frame, style="Card.TFrame")
+            row.pack(fill=tk.X, pady=1)
+            ttk.Label(row, text=f"{label_text}:", style="Card.TLabel", width=12).pack(side=tk.LEFT)
+            ttk.Label(row, textvariable=var, style="Muted.TLabel").pack(side=tk.LEFT, padx=(5, 0))
 
-    def _build_model_row(self, parent: tk.Widget):
-        self._model_combo = ttk.Combobox(parent, textvariable=self.cfg_model, state="readonly")
-        self._model_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(parent, text="\U0001f504", style="Secondary.TButton",
-                   command=self._refresh_models, width=3).pack(side=tk.RIGHT, padx=(5, 0))
+    # ── Task Configuration ─────────────────────────────────────────────
+
+    def _create_task_config_section(self, parent: tk.Widget):
+        """Create task parameter configuration section."""
+        card = self.create_card(parent, "Task Configuration")
+
+        # Model selection
+        model_frame = ttk.Frame(card, style="Card.TFrame")
+        model_frame.pack(fill=tk.X, pady=3)
+        ttk.Label(model_frame, text="Model:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        model_combo = ttk.Combobox(
+            model_frame, textvariable=self.selected_model, state="readonly"
+        )
+        model_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+        refresh_btn = ttk.Button(
+            model_frame, text="\U0001f504",
+            style="Secondary.TButton", command=self._refresh_models
+        )
+        refresh_btn.pack(side=tk.RIGHT, padx=(5, 0))
+
+        # Pitch shift
+        pitch_frame = ttk.Frame(card, style="Card.TFrame")
+        pitch_frame.pack(fill=tk.X, pady=3)
+        ttk.Label(pitch_frame, text="Pitch:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        pitch_spinbox = tk.Spinbox(
+            pitch_frame, from_=PITCH_MIN, to=PITCH_MAX,
+            textvariable=self.pitch_shift,
+            font=(Fonts.FAMILY, Fonts.SIZE_BODY),
+            bg=Colors.BG_INPUT, fg=Colors.TEXT_PRIMARY,
+            buttonbackground=Colors.BG_TERTIARY, width=5
+        )
+        pitch_spinbox.pack(side=tk.LEFT)
+        ttk.Label(pitch_frame, text="semitones", style="Muted.TLabel").pack(
+            side=tk.LEFT, padx=(5, 0)
+        )
+
+        # Feature extractor
+        fe_frame = ttk.Frame(card, style="Card.TFrame")
+        fe_frame.pack(fill=tk.X, pady=3)
+        ttk.Label(fe_frame, text="Feature:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        fe_combo = ttk.Combobox(
+            fe_frame, textvariable=self.feature_extractor,
+            values=list(self.FEATURE_EXTRACTORS.keys()), state="readonly", width=12
+        )
+        fe_combo.pack(side=tk.LEFT)
+
+        # F0 method
+        f0_frame = ttk.Frame(card, style="Card.TFrame")
+        f0_frame.pack(fill=tk.X, pady=3)
+        ttk.Label(f0_frame, text="F0 Method:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        f0_combo = ttk.Combobox(
+            f0_frame, textvariable=self.f0_method,
+            values=list(self.F0_METHODS.keys()), state="readonly", width=12
+        )
+        f0_combo.pack(side=tk.LEFT)
+
+        # Device
+        dev_frame = ttk.Frame(card, style="Card.TFrame")
+        dev_frame.pack(fill=tk.X, pady=3)
+        ttk.Label(dev_frame, text="Device:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        dev_combo = ttk.Combobox(
+            dev_frame, textvariable=self.device,
+            values=list(self.DEVICES.keys()), state="readonly", width=12
+        )
+        dev_combo.pack(side=tk.LEFT)
+
+        # Sample rate
+        sr_frame = ttk.Frame(card, style="Card.TFrame")
+        sr_frame.pack(fill=tk.X, pady=3)
+        ttk.Label(sr_frame, text="Sample Rate:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        sr_combo = ttk.Combobox(
+            sr_frame, textvariable=self.output_sample_rate,
+            values=self.SAMPLE_RATES, state="readonly", width=12
+        )
+        sr_combo.pack(side=tk.LEFT)
+
+        # Cluster ratio
+        cluster_frame = ttk.Frame(card, style="Card.TFrame")
+        cluster_frame.pack(fill=tk.X, pady=3)
+        ttk.Label(cluster_frame, text="Cluster:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        cluster_scale = ttk.Scale(
+            cluster_frame, from_=0.0, to=1.0,
+            variable=self.cluster_ratio, orient=tk.HORIZONTAL
+        )
+        cluster_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        self.cluster_label = ttk.Label(cluster_frame, text="0.00", style="Card.TLabel", width=5)
+        self.cluster_label.pack(side=tk.LEFT)
+        self.cluster_ratio.trace_add("write", self._update_cluster_label)
+
+        # Output directory
+        outdir_frame = ttk.Frame(card, style="Card.TFrame")
+        outdir_frame.pack(fill=tk.X, pady=(10, 0))
+        ttk.Label(outdir_frame, text="Output Dir:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        outdir_entry = ttk.Entry(outdir_frame, textvariable=self.output_dir)
+        outdir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
+        outdir_btn = ttk.Button(
+            outdir_frame, text="...",
+            style="Secondary.TButton", command=self._browse_output_dir
+        )
+        outdir_btn.pack(side=tk.RIGHT)
+
         self._refresh_models()
 
-    def _build_pitch_row(self, parent: tk.Widget):
-        tk.Spinbox(parent, from_=-12, to=12, textvariable=self.cfg_pitch,
-                   font=(Fonts.FAMILY, Fonts.SIZE_BODY),
-                   bg=Colors.BG_INPUT, fg=Colors.TEXT_PRIMARY,
-                   buttonbackground=Colors.BG_TERTIARY, width=6).pack(side=tk.LEFT)
-        ttk.Label(parent, text="semitones", style="Muted.TLabel").pack(side=tk.LEFT, padx=(8, 0))
+    def _update_cluster_label(self, *args):
+        """Update cluster ratio display label."""
+        val = self.cluster_ratio.get()
+        self.cluster_label.configure(text=f"{val:.2f}")
 
-    def _build_f0_row(self, parent: tk.Widget):
-        ttk.Combobox(parent, textvariable=self.cfg_f0,
-                     values=self.F0_METHODS, state="readonly", width=12).pack(side=tk.LEFT)
+    # ── Action Buttons ─────────────────────────────────────────────────
 
-    def _build_feature_row(self, parent: tk.Widget):
-        ttk.Combobox(parent, textvariable=self.cfg_feature,
-                     values=self.FEATURE_EXTRACTORS, state="readonly", width=12).pack(side=tk.LEFT)
-
-    def _build_cluster_row(self, parent: tk.Widget):
-        ttk.Scale(parent, from_=0.0, to=1.0, variable=self.cfg_cluster,
-                  orient=tk.HORIZONTAL).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        ttk.Label(parent, textvariable=self.cluster_label_var, style="Card.TLabel", width=5).pack(side=tk.LEFT)
-        self.cfg_cluster.trace_add("write", self._update_cluster_label)
-
-    def _build_device_row(self, parent: tk.Widget):
-        ttk.Combobox(parent, textvariable=self.cfg_device,
-                     values=self.DEVICES, state="readonly", width=10).pack(side=tk.LEFT)
-
-    def _build_sr_row(self, parent: tk.Widget):
-        ttk.Combobox(parent, textvariable=self.cfg_sr,
-                     values=self.SAMPLE_RATES, state="readonly", width=10).pack(side=tk.LEFT)
-        ttk.Label(parent, text="Hz", style="Muted.TLabel").pack(side=tk.LEFT, padx=(5, 0))
-
-    # ── Action buttons ─────────────────────────────────────────────────
-
-    def _build_action_card(self, parent: tk.Widget):
+    def _create_action_section(self, parent: tk.Widget):
+        """Create action buttons section."""
         card = self.create_card(parent, "Actions")
 
-        # Row 1: add / duplicate
-        row1 = ttk.Frame(card, style="Card.TFrame")
-        row1.pack(fill=tk.X, pady=3)
-        ttk.Button(row1, text="\u2795 Add Task", style="Primary.TButton",
-                   command=self._add_task).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(row1, text="\U0001f4cb Duplicate Last", style="Secondary.TButton",
-                   command=self._duplicate_last_task).pack(side=tk.LEFT)
+        # Add task button
+        add_btn = ttk.Button(
+            card, text="\u2795 Add Task",
+            style="Primary.TButton", command=self._add_task
+        )
+        add_btn.pack(fill=tk.X, pady=(0, 5))
 
-        # Row 2: batch start / cancel all / clear done
-        row2 = ttk.Frame(card, style="Card.TFrame")
-        row2.pack(fill=tk.X, pady=3)
-        ttk.Button(row2, text="\u25b6 Start All", style="Primary.TButton",
-                   command=self._start_all_tasks).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(row2, text="\u23f9 Cancel All", style="Danger.TButton",
-                   command=self._cancel_all_tasks).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(row2, text="\U0001f5d1 Clear Done", style="Secondary.TButton",
-                   command=self._clear_done_tasks).pack(side=tk.LEFT)
+        # Duplicate last task
+        dup_btn = ttk.Button(
+            card, text="\U0001f4cb Duplicate Last Config",
+            style="Secondary.TButton", command=self._duplicate_last_task
+        )
+        dup_btn.pack(fill=tk.X, pady=(0, 5))
 
-        # Row 3: save / load config
-        row3 = ttk.Frame(card, style="Card.TFrame")
-        row3.pack(fill=tk.X, pady=3)
-        ttk.Button(row3, text="\U0001f4be Save Config", style="Secondary.TButton",
-                   command=self._save_config).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(row3, text="\U0001f4c2 Load Config", style="Secondary.TButton",
-                   command=self._load_config).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(row3, text="\U0001f4e6 Export All", style="Secondary.TButton",
-                   command=self._export_all).pack(side=tk.LEFT)
+        # Batch operations
+        batch_frame = ttk.Frame(card, style="Card.TFrame")
+        batch_frame.pack(fill=tk.X, pady=(5, 0))
 
-    # ── Task list ──────────────────────────────────────────────────────
+        start_all_btn = ttk.Button(
+            batch_frame, text="\u25b6 Start All",
+            style="Primary.TButton", command=self._start_all_tasks
+        )
+        start_all_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
 
-    def _build_task_list_card(self, parent: tk.Widget):
+        cancel_all_btn = ttk.Button(
+            batch_frame, text="\u23f9 Cancel All",
+            style="Danger.TButton", command=self._cancel_all_tasks
+        )
+        cancel_all_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
+
+        # Clear / Remove
+        clear_frame = ttk.Frame(card, style="Card.TFrame")
+        clear_frame.pack(fill=tk.X, pady=(5, 0))
+
+        clear_done_btn = ttk.Button(
+            clear_frame, text="Clear Done",
+            style="Secondary.TButton", command=self._clear_done_tasks
+        )
+        clear_done_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
+
+        remove_btn = ttk.Button(
+            clear_frame, text="Remove Selected",
+            style="Secondary.TButton", command=self._remove_selected_task
+        )
+        remove_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
+
+        # Config save/load
+        config_frame = ttk.Frame(card, style="Card.TFrame")
+        config_frame.pack(fill=tk.X, pady=(10, 0))
+
+        save_cfg_btn = ttk.Button(
+            config_frame, text="Save Config",
+            style="Secondary.TButton", command=self._save_config
+        )
+        save_cfg_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
+
+        load_cfg_btn = ttk.Button(
+            config_frame, text="Load Config",
+            style="Secondary.TButton", command=self._load_config
+        )
+        load_cfg_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
+
+    # ── Task List ──────────────────────────────────────────────────────
+
+    def _create_task_list_section(self, parent: tk.Widget):
+        """Create task list section with Treeview."""
         card = self.create_card(parent, "Task Queue")
 
         # Treeview for task list
-        columns = ("id", "model", "pitch", "f0", "feature", "status", "time")
-        self._task_tree = ttk.Treeview(card, columns=columns, show="headings", height=8)
+        tree_frame = ttk.Frame(card, style="Card.TFrame")
+        tree_frame.pack(fill=tk.BOTH, expand=True)
 
-        col_config = [
-            ("id", "#", 40),
-            ("model", "Model", 120),
-            ("pitch", "Pitch", 55),
-            ("f0", "F0", 65),
-            ("feature", "Feature", 75),
-            ("status", "Status", 80),
-            ("time", "Time", 60),
-        ]
-        for cid, heading, width in col_config:
-            self._task_tree.heading(cid, text=heading)
-            self._task_tree.column(cid, width=width, minwidth=40)
+        self.task_tree = ttk.Treeview(
+            tree_frame, columns=COLUMNS,
+            show="headings", height=8
+        )
 
-        self._task_tree.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+        for col in COLUMNS:
+            self.task_tree.heading(col, text=COLUMN_HEADINGS[col])
+            self.task_tree.column(col, width=COLUMN_WIDTHS[col])
 
-        # Per-task action buttons
-        btn_row = ttk.Frame(card, style="Card.TFrame")
-        btn_row.pack(fill=tk.X)
-        ttk.Button(btn_row, text="\u25b6 Play", style="Primary.TButton",
-                   command=self._play_selected).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_row, text="\U0001f504 A/B Switch", style="Secondary.TButton",
-                   command=self._ab_switch).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_row, text="\u274c Cancel", style="Danger.TButton",
-                   command=self._cancel_selected).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_row, text="\U0001f5d1 Remove", style="Secondary.TButton",
-                   command=self._remove_selected).pack(side=tk.LEFT)
+        scrollbar = ttk.Scrollbar(
+            tree_frame, orient=tk.VERTICAL, command=self.task_tree.yview
+        )
+        self.task_tree.configure(yscrollcommand=scrollbar.set)
 
-    # ── Result / playback area ─────────────────────────────────────────
+        self.task_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-    def _build_result_card(self, parent: tk.Widget):
-        card = self.create_card(parent, "Playback & Results")
+        # Task count label
+        self.task_count_label = ttk.Label(
+            card, text="0 tasks", style="Muted.TLabel"
+        )
+        self.task_count_label.pack(anchor=tk.W, pady=(5, 0))
 
-        # Now-playing info
-        self.now_playing_var = tk.StringVar(value="Select a completed task and click Play")
-        ttk.Label(card, textvariable=self.now_playing_var,
-                  style="Card.TLabel").pack(anchor=tk.W, pady=(0, 8))
+    # ── Playback Section ───────────────────────────────────────────────
 
-        # Playback controls
-        ctrl = ttk.Frame(card, style="Card.TFrame")
-        ctrl.pack(fill=tk.X, pady=(0, 8))
+    def _create_playback_section(self, parent: tk.Widget):
+        """Create A/B playback controls section."""
+        card = self.create_card(parent, "Playback (A/B Compare)")
 
-        ttk.Button(ctrl, text="\u25b6 Play", style="Primary.TButton",
-                   command=self._play_selected).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(ctrl, text="\u23f9 Stop", style="Danger.TButton",
-                   command=self._stop_playback).pack(side=tk.LEFT, padx=(0, 5))
+        # A/B selection info
+        ab_frame = ttk.Frame(card, style="Card.TFrame")
+        ab_frame.pack(fill=tk.X, pady=(0, 10))
 
-        # Volume
-        ttk.Label(ctrl, text="Vol:", style="Card.TLabel").pack(side=tk.LEFT, padx=(15, 5))
-        self._volume_var = tk.IntVar(value=80)
-        ttk.Scale(ctrl, from_=0, to=100, variable=self._volume_var,
-                  orient=tk.HORIZONTAL, length=120).pack(side=tk.LEFT)
+        ttk.Label(ab_frame, text="Select 1-2 completed tasks for A/B comparison", style="Muted.TLabel").pack(
+            anchor=tk.W
+        )
 
-        # Result list (text area showing completed results)
-        self._result_text = tk.Text(
-            card, height=6,
+        # Playback buttons
+        play_frame = ttk.Frame(card, style="Card.TFrame")
+        play_frame.pack(fill=tk.X, pady=(0, 10))
+
+        play_a_btn = ttk.Button(
+            play_frame, text="\u25b6 Play A",
+            style="Primary.TButton", command=self._play_selected_a
+        )
+        play_a_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        play_b_btn = ttk.Button(
+            play_frame, text="\u25b6 Play B",
+            style="Primary.TButton", command=self._play_selected_b
+        )
+        play_b_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        stop_btn = ttk.Button(
+            play_frame, text="\u23f9 Stop",
+            style="Danger.TButton", command=self._stop_playback
+        )
+        stop_btn.pack(side=tk.LEFT, padx=(0, 5))
+
+        ab_btn = ttk.Button(
+            play_frame, text="\U0001f504 A/B Switch",
+            style="Secondary.TButton", command=self._ab_switch_play
+        )
+        ab_btn.pack(side=tk.LEFT)
+
+        # Volume control
+        vol_frame = ttk.Frame(card, style="Card.TFrame")
+        vol_frame.pack(fill=tk.X)
+        ttk.Label(vol_frame, text="Volume:", style="Card.TLabel").pack(side=tk.LEFT)
+        self.volume_var = tk.DoubleVar(value=0.8)
+        vol_scale = ttk.Scale(
+            vol_frame, from_=0.0, to=1.0,
+            variable=self.volume_var, orient=tk.HORIZONTAL
+        )
+        vol_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+
+    # ── Result Log ─────────────────────────────────────────────────────
+
+    def _create_result_log_section(self, parent: tk.Widget):
+        """Create result log section."""
+        card = self.create_card(parent, "Result Log")
+
+        log_frame = ttk.Frame(card, style="Card.TFrame")
+        log_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.log_display = tk.Text(
+            log_frame, height=8,
             bg=Colors.BG_INPUT, fg=Colors.TEXT_PRIMARY,
             font=(Fonts.FAMILY_MONO, Fonts.SIZE_SMALL),
             wrap=tk.WORD, state=tk.DISABLED
         )
-        self._result_text.pack(fill=tk.BOTH, expand=True)
+        self.log_display.pack(fill=tk.BOTH, expand=True)
 
-    # ═══════════════════════════════════════════════════════════════════
-    #  Helpers
-    # ═══════════════════════════════════════════════════════════════════
+        scrollbar = ttk.Scrollbar(self.log_display, command=self.log_display.yview)
+        self.log_display.configure(yscrollcommand=scrollbar.set)
 
-    def _update_cluster_label(self, *args):
-        self.cluster_label_var.set(f"{self.cfg_cluster.get():.2f}")
+    # ── Export Section ─────────────────────────────────────────────────
+
+    def _create_export_section(self, parent: tk.Widget):
+        """Create export section."""
+        card = self.create_card(parent, "Export Results")
+
+        # Elapsed time
+        time_frame = ttk.Frame(card, style="Card.TFrame")
+        time_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(time_frame, text="Elapsed:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(time_frame, textvariable=self.elapsed_var, style="Card.TLabel").pack(
+            side=tk.LEFT, padx=(10, 0)
+        )
+
+        # Export buttons
+        export_frame = ttk.Frame(card, style="Card.TFrame")
+        export_frame.pack(fill=tk.X)
+
+        export_all_btn = ttk.Button(
+            export_frame, text="\U0001f4e6 Export All Results",
+            style="Primary.TButton", command=self._export_all_results
+        )
+        export_all_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        open_folder_btn = ttk.Button(
+            export_frame, text="\U0001f4c1 Open Folder",
+            style="Secondary.TButton", command=self._open_output_folder
+        )
+        open_folder_btn.pack(side=tk.LEFT)
+
+    # ── Browse Handlers ────────────────────────────────────────────────
 
     def _browse_source(self):
-        filetypes = [
-            ("Audio files", "*.wav *.mp3 *.flac *.ogg"),
-            ("All files", "*.*")
-        ]
-        path = filedialog.askopenfilename(
-            title="Select Source Audio", filetypes=filetypes,
-            initialdir=self._last_dir
+        """Browse for source audio file."""
+        filename = filedialog.askopenfilename(
+            title="Select Source Audio",
+            filetypes=AUDIO_FILETYPES,
+            initialdir=self._last_directory,
         )
-        if path:
-            self.source_path.set(path)
-            self._last_dir = os.path.dirname(path)
-            _save_settings({"comparison_last_dir": self._last_dir})
-            self._update_file_info(path)
+        if filename:
+            self.source_path.set(filename)
+            self._last_directory = os.path.dirname(filename)
+            self._settings.set("comparison_last_dir", self._last_directory)
 
-    def _update_file_info(self, filepath: str):
-        """Load and display basic audio file info."""
-        def _load():
+            if not self.output_dir.get():
+                self.output_dir.set(os.path.dirname(filename))
+
+    def _browse_output_dir(self):
+        """Browse for output directory."""
+        dirname = filedialog.askdirectory(
+            title="Select Output Directory",
+            initialdir=self._last_directory,
+        )
+        if dirname:
+            self.output_dir.set(dirname)
+            self._last_directory = dirname
+            self._settings.set("comparison_last_dir", dirname)
+
+    # ── File Info (background thread, fix #12) ─────────────────────────
+
+    def _on_source_path_changed(self, *args):
+        """Triggered when source_path changes."""
+        filepath = self.source_path.get()
+        if not filepath or not os.path.isfile(filepath):
+            self._reset_file_info()
+            return
+        threading.Thread(target=self._load_file_info, args=(filepath,), daemon=True).start()
+
+    def _reset_file_info(self):
+        """Reset file info to defaults."""
+        self.file_info_filename.set("No file selected")
+        self.file_info_duration.set("--")
+        self.file_info_samplerate.set("--")
+        self.file_info_channels.set("--")
+        self.file_info_filesize.set("--")
+
+    def _load_file_info(self, filepath: str):
+        """Load audio file info in background thread."""
+        try:
+            size_bytes = os.path.getsize(filepath)
+            size_str = f"{size_bytes / 1024:.1f} KB" if size_bytes < 1024 * 1024 else f"{size_bytes / 1024 / 1024:.2f} MB"
+            filename = os.path.basename(filepath)
+            self.safe_after(0, lambda: self.file_info_filename.set(filename))
+            self.safe_after(0, lambda: self.file_info_filesize.set(size_str))
+
             try:
-                size = os.path.getsize(filepath)
-                size_str = f"{size / 1024 / 1024:.1f} MB" if size > 1024 * 1024 else f"{size / 1024:.0f} KB"
-                name = os.path.basename(filepath)
-                try:
-                    import soundfile as sf
-                    info = sf.info(filepath)
-                    dur = info.duration
-                    m, s = int(dur // 60), int(dur % 60)
-                    text = f"{name}  |  {m}:{s:02d}  |  {info.samplerate}Hz  |  {size_str}"
-                except Exception:
-                    text = f"{name}  |  {size_str}"
-                self.after(0, lambda: self.file_info_text.set(text))
+                import soundfile as sf
+                info = sf.info(filepath)
+                duration_sec = info.duration
+                minutes = int(duration_sec // 60)
+                seconds = int(duration_sec % 60)
+                self.safe_after(0, lambda: self.file_info_duration.set(f"{minutes}:{seconds:02d}"))
+                self.safe_after(0, lambda: self.file_info_samplerate.set(f"{info.samplerate} Hz"))
+                ch_map = {1: "Mono", 2: "Stereo"}
+                self.safe_after(0, lambda: self.file_info_channels.set(
+                    ch_map.get(info.channels, f"{info.channels} ch")
+                ))
             except Exception:
-                self.after(0, lambda: self.file_info_text.set("Cannot read file info"))
-        threading.Thread(target=_load, daemon=True).start()
+                self.safe_after(0, lambda: self.file_info_duration.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_samplerate.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_channels.set("N/A"))
+        except Exception:
+            self.safe_after(0, self._reset_file_info)
+
+    # ── Model Management (with cache, fix #7, depth limit, fix #10) ────
 
     def _refresh_models(self):
-        """Scan model directories for .pth files."""
-        dirs = [
-            os.path.join(os.path.expanduser("~"), ".soma", "models"),
-            os.path.join(os.getcwd(), "assets", "models"),
-        ]
-        models = []
-        for d in dirs:
-            if os.path.isdir(d):
-                for f in os.listdir(d):
-                    if f.endswith(".pth"):
-                        models.append(f[:-4])
+        """Refresh available models with mtime-based cache."""
+        now = time.time()
+        if self._model_cache and (now - self._model_cache_time) < MODEL_CACHE_TTL:
+            models = self._model_cache
+        else:
+            model_dirs = [
+                os.path.join(os.path.expanduser("~"), ".soma", "models"),
+                os.path.join(os.getcwd(), "assets", "models"),
+            ]
+            models = []
+            for model_dir in model_dirs:
+                if os.path.isdir(model_dir):
+                    for f in os.listdir(model_dir):
+                        if f.endswith(".pth"):
+                            models.append(f[:-4])
+            self._model_cache = models
+            self._model_cache_time = now
+
         if not models:
             models = ["No models available"]
-        self._available_models = models
-        self._model_combo.configure(values=models)
-        if models and models[0] != "No models available":
-            self._model_combo.set(models[0])
+
+        # Update all model comboboxes in the config section
+        for widget in self._find_comboboxes():
+            widget.configure(values=models)
+            if not widget.get():
+                widget.set(models[0])
+
+    def _find_comboboxes(self) -> List[ttk.Combobox]:
+        """Find all model comboboxes in the config section."""
+        result = []
+        for widget in self.winfo_children():
+            for child in widget.winfo_children():
+                if isinstance(child, ttk.Combobox):
+                    cv = getattr(child, '_textvariable', None)
+                    if cv == self.selected_model:
+                        result.append(child)
+        return result
 
     def _find_model_file(self, model_name: str) -> Optional[str]:
-        """Locate model .pth file by name."""
-        dirs = [
+        """Find model file by name (depth-limited, fix #10)."""
+        search_dirs = [
             os.path.join(os.path.expanduser("~"), ".soma", "models"),
             os.path.join(os.getcwd(), "assets", "models"),
         ]
-        for d in dirs:
-            if not os.path.isdir(d):
+        for search_dir in search_dirs:
+            if not os.path.isdir(search_dir):
                 continue
-            direct = os.path.join(d, f"{model_name}.pth")
+            direct = os.path.join(search_dir, f"{model_name}.pth")
             if os.path.isfile(direct):
                 return direct
-            for root, _, files in os.walk(d):
+            for root, dirs, files in os.walk(search_dir):
+                rel = os.path.relpath(root, search_dir)
+                depth = 0 if rel == "." else rel.count(os.sep) + 1
+                if depth >= MODEL_SEARCH_MAX_DEPTH:
+                    dirs.clear()
+                    continue
                 for f in files:
                     if f == f"{model_name}.pth":
                         return os.path.join(root, f)
         return None
 
-    def _get_current_config(self) -> Dict[str, Any]:
-        """Capture current parameter panel as a config dict."""
+    # ── Task Management (thread-safe, fix #6) ──────────────────────────
+
+    def _get_current_config(self) -> Dict:
+        """Get current parameter configuration."""
         return {
-            "model": self.cfg_model.get(),
-            "pitch": self.pitch_shift_val(),
-            "f0_method": self.cfg_f0.get(),
-            "feature_extractor": self.cfg_feature.get(),
-            "cluster_ratio": round(self.cfg_cluster.get(), 2),
-            "device": self.cfg_device.get(),
-            "sample_rate": int(self.cfg_sr.get()),
+            "model": self.selected_model.get(),
+            "pitch": self.pitch_shift.get(),
+            "feature_extractor": self.feature_extractor.get(),
+            "f0_method": self.f0_method.get(),
+            "device": self.device.get(),
+            "sample_rate": self.output_sample_rate.get(),
+            "cluster_ratio": round(self.cluster_ratio.get(), 2),
         }
 
-    def pitch_shift_val(self) -> int:
-        return self.cfg_pitch.get()
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  Task management
-    # ═══════════════════════════════════════════════════════════════════
-
-    def _next_task_id(self) -> int:
-        self._task_id_counter += 1
-        return self._task_id_counter
-
-    def _add_task(self, config: Optional[Dict] = None):
-        """Add a new task to the queue with current (or given) parameters."""
+    def _add_task(self):
+        """Add a new task with current configuration."""
         if not self.source_path.get():
             messagebox.showwarning("Warning", "Please select a source audio file first.")
             return
-        if not os.path.isfile(self.source_path.get()):
-            messagebox.showerror("Error", "Source file does not exist.")
+
+        config = self._get_current_config()
+        if config["model"] == "No models available":
+            messagebox.showwarning("Warning", "No voice models available.")
             return
 
-        cfg = config or self._get_current_config()
-        if cfg["model"] == "No models available":
-            messagebox.showwarning("Warning", "No voice model selected.")
-            return
+        with self._tasks_lock:
+            self._task_counter += 1
+            task_id = self._task_counter
+            task = {
+                "id": task_id,
+                "config": config,
+                "status": STATUS_QUEUED,
+                "result_path": None,
+                "error": None,
+                "duration": None,
+                "cancel_flag": threading.Event(),
+                "uuid": uuid.uuid4().hex[:8],  # fix #9: unique ID for filenames
+            }
+            self._tasks.append(task)
 
-        task = {
-            "id": self._next_task_id(),
-            "source": self.source_path.get(),
-            "config": cfg,
-            "status": STATUS_QUEUED,
-            "output_path": None,
-            "elapsed": None,
-            "error": None,
-            "future": None,
-            "cancel_flag": threading.Event(),
-        }
-        self._tasks.append(task)
-        self._refresh_task_tree()
+        # Insert into treeview
+        self.task_tree.insert("", tk.END, iid=str(task_id), values=(
+            task_id,
+            config["model"],
+            f"{config['pitch']:+d}",
+            config["f0_method"],
+            config["feature_extractor"],
+            STATUS_DISPLAY[STATUS_QUEUED],
+            "--",
+        ))
+
+        self._update_task_count()
+        self._log(f"Task #{task_id} added: model={config['model']}, pitch={config['pitch']:+d}, "
+                  f"f0={config['f0_method']}, feature={config['feature_extractor']}")
 
     def _duplicate_last_task(self):
-        """Duplicate the last task's config into a new task."""
-        if not self._tasks:
-            messagebox.showinfo("Info", "No tasks to duplicate.")
+        """Duplicate the last task's configuration for quick setup."""
+        with self._tasks_lock:
+            if not self._tasks:
+                messagebox.showinfo("Info", "No tasks to duplicate.")
+                return
+            last_config = self._tasks[-1]["config"].copy()
+
+        # Apply last config to current controls
+        self.selected_model.set(last_config["model"])
+        self.pitch_shift.set(last_config["pitch"])
+        self.feature_extractor.set(last_config["feature_extractor"])
+        self.f0_method.set(last_config["f0_method"])
+        self.device.set(last_config["device"])
+        self.output_sample_rate.set(last_config["sample_rate"])
+        self.cluster_ratio.set(last_config["cluster_ratio"])
+
+        self._log(f"Duplicated config from last task: model={last_config['model']}")
+
+    def _remove_selected_task(self):
+        """Remove selected task from queue."""
+        selection = self.task_tree.selection()
+        if not selection:
             return
-        last_cfg = self._tasks[-1]["config"].copy()
-        # Apply to UI so user can tweak
-        self.cfg_model.set(last_cfg["model"])
-        self.cfg_pitch.set(last_cfg["pitch"])
-        self.cfg_f0.set(last_cfg["f0_method"])
-        self.cfg_feature.set(last_cfg["feature_extractor"])
-        self.cfg_cluster.set(last_cfg["cluster_ratio"])
-        self.cfg_device.set(last_cfg["device"])
-        self.cfg_sr.set(str(last_cfg["sample_rate"]))
-        self._add_task(last_cfg)
+
+        for item_id in selection:
+            task_id = int(item_id)
+            with self._tasks_lock:
+                task = next((t for t in self._tasks if t["id"] == task_id), None)
+                if task:
+                    if task["status"] == STATUS_RUNNING:
+                        task["cancel_flag"].set()
+                    self._tasks.remove(task)
+            self.task_tree.delete(item_id)
+
+        self._update_task_count()
+
+    def _clear_done_tasks(self):
+        """Clear all completed/failed/cancelled tasks."""
+        with self._tasks_lock:
+            done_tasks = [t for t in self._tasks if t["status"] in (STATUS_DONE, STATUS_FAILED, STATUS_CANCELLED)]
+            for task in done_tasks:
+                self._tasks.remove(task)
+                try:
+                    self.task_tree.delete(str(task["id"]))
+                except tk.TclError:
+                    pass
+
+        self._update_task_count()
+
+    def _update_task_count(self):
+        """Update task count label."""
+        with self._tasks_lock:
+            total = len(self._tasks)
+            done = sum(1 for t in self._tasks if t["status"] == STATUS_DONE)
+            running = sum(1 for t in self._tasks if t["status"] == STATUS_RUNNING)
+        self.task_count_label.configure(text=f"{total} tasks ({done} done, {running} running)")
+
+    def _update_task_in_tree(self, task_id: int, task: Dict):
+        """Update a task's display in the treeview (main thread)."""
+        try:
+            iid = str(task_id)
+            self.task_tree.item(iid, values=(
+                task_id,
+                task["config"]["model"],
+                f"{task['config']['pitch']:+d}",
+                task["config"]["f0_method"],
+                task["config"]["feature_extractor"],
+                STATUS_DISPLAY.get(task["status"], task["status"]),
+                f"{task['duration']:.1f}s" if task["duration"] else "--",
+            ))
+        except tk.TclError:
+            pass
+
+    # ── Batch Operations ───────────────────────────────────────────────
 
     def _start_all_tasks(self):
-        """Submit all queued tasks to the thread pool."""
+        """Start all queued tasks."""
         if not self.source_path.get():
             messagebox.showwarning("Warning", "Please select a source audio file first.")
             return
 
-        queued = [t for t in self._tasks if t["status"] == STATUS_QUEUED]
+        if not self.output_dir.get():
+            messagebox.showwarning("Warning", "Please specify an output directory first.")
+            return
+
+        try:
+            os.makedirs(self.output_dir.get(), exist_ok=True)
+        except OSError as e:
+            messagebox.showerror("Error", f"Cannot create output directory:\n{e}")
+            return
+
+        with self._tasks_lock:
+            queued = [t for t in self._tasks if t["status"] == STATUS_QUEUED]
+
         if not queued:
             messagebox.showinfo("Info", "No queued tasks to start.")
             return
 
-        for task in queued:
-            task["status"] = STATUS_RUNNING
-            future = self._executor.submit(self._run_task, task)
-            task["future"] = future
-            future.add_done_callback(lambda f, t=task: self._on_task_done(t, f))
+        self._processing = True
+        self._start_time = time.time()
+        self._tick_elapsed()
 
-        self._refresh_task_tree()
+        for task in queued:
+            task["cancel_flag"].clear()
+            task["status"] = STATUS_RUNNING
+            self.safe_after(0, lambda t=task: self._update_task_in_tree(t["id"], t))
+            self._executor.submit(self._run_task, task)
+
+        self._update_task_count()
+        self._log(f"Started {len(queued)} task(s)")
 
     def _cancel_all_tasks(self):
-        """Cancel all queued/running tasks."""
-        for task in self._tasks:
-            if task["status"] in (STATUS_QUEUED, STATUS_RUNNING):
-                task["cancel_flag"].set()
-                task["status"] = STATUS_CANCELLED
-                if task["future"] and not task["future"].done():
-                    task["future"].cancel()
-        self._refresh_task_tree()
+        """Cancel all running tasks."""
+        with self._tasks_lock:
+            running = [t for t in self._tasks if t["status"] == STATUS_RUNNING]
 
-    def _cancel_selected(self):
-        """Cancel the selected task."""
-        task = self._get_selected_task()
-        if task and task["status"] in (STATUS_QUEUED, STATUS_RUNNING):
+        for task in running:
             task["cancel_flag"].set()
-            task["status"] = STATUS_CANCELLED
-            if task["future"] and not task["future"].done():
-                task["future"].cancel()
-            self._refresh_task_tree()
 
-    def _remove_selected(self):
-        """Remove the selected task from the list."""
-        task = self._get_selected_task()
-        if task:
-            task["cancel_flag"].set()
-            self._tasks.remove(task)
-            self._refresh_task_tree()
+        self._log(f"Cancelled {len(running)} task(s)")
 
-    def _clear_done_tasks(self):
-        """Remove all completed/failed/cancelled tasks."""
-        self._tasks = [t for t in self._tasks if t["status"] in (STATUS_QUEUED, STATUS_RUNNING)]
-        self._refresh_task_tree()
-
-    def _get_selected_task(self) -> Optional[Dict]:
-        """Get the task corresponding to the selected tree row."""
-        sel = self._task_tree.selection()
-        if not sel:
-            return None
-        item = self._task_tree.item(sel[0])
-        task_id = int(item["values"][0])
-        for t in self._tasks:
-            if t["id"] == task_id:
-                return t
-        return None
-
-    def _refresh_task_tree(self):
-        """Rebuild the treeview from self._tasks."""
-        self._task_tree.delete(*self._task_tree.get_children())
-        status_icons = {
-            STATUS_QUEUED: "\u23f3",     # ⏳
-            STATUS_RUNNING: "\u2699",     # ⚙
-            STATUS_DONE: "\u2705",        # ✅
-            STATUS_FAILED: "\u274c",      # ❌
-            STATUS_CANCELLED: "\u23f9",   # ⏹
-        }
-        for t in self._tasks:
-            cfg = t["config"]
-            icon = status_icons.get(t["status"], "")
-            time_str = f"{t['elapsed']:.1f}s" if t["elapsed"] is not None else "--"
-            self._task_tree.insert("", tk.END, values=(
-                t["id"],
-                cfg["model"],
-                f"{cfg['pitch']:+d}",
-                cfg["f0_method"],
-                cfg["feature_extractor"],
-                f"{icon} {t['status']}",
-                time_str,
-            ))
-
-    # ═══════════════════════════════════════════════════════════════════
-    #  Task execution (runs in worker thread)
-    # ═══════════════════════════════════════════════════════════════════
+    # ── Task Execution ─────────────────────────────────────────────────
 
     def _run_task(self, task: Dict):
-        """Execute a single comparison task. Runs in thread pool."""
-        if task["cancel_flag"].is_set():
-            return
-
-        cfg = task["config"]
-        source = task["source"]
-        t0 = time.time()
+        """Execute a single conversion task (runs in thread pool)."""
+        task_id = task["id"]
+        config = task["config"]
+        cancel_flag = task["cancel_flag"]
+        start_time = time.time()
 
         try:
             import numpy as np
             import soundfile as sf
+            from training.inference import RVCInference
 
-            # Resolve device
-            device_str = cfg["device"]
+            # Find model file
+            model_path = self._find_model_file(config["model"])
+            if model_path is None:
+                raise FileNotFoundError(f"Model '{config['model']}' not found")
+
+            if cancel_flag.is_set():
+                raise InterruptedError("Cancelled")
+
+            # Determine device
+            device_str = config["device"]
             if device_str == "auto":
                 try:
                     import torch
@@ -578,263 +902,321 @@ class ComparisonPage(BasePage):
                 except ImportError:
                     device_str = "cpu"
 
-            # Find model
-            model_path = self._find_model_file(cfg["model"])
-            if model_path is None:
-                raise FileNotFoundError(f"Model '{cfg['model']}' not found")
+            output_sr = int(config["sample_rate"])
 
-            if task["cancel_flag"].is_set():
-                return
-
-            # Load inference pipeline
-            from training.inference import RVCInference
             pipeline = RVCInference(
                 model_path=model_path,
                 device=device_str,
-                output_sample_rate=cfg["sample_rate"],
-                f0_method=cfg["f0_method"],
+                output_sample_rate=output_sr,
+                f0_method=config["f0_method"],
             )
 
-            if task["cancel_flag"].is_set():
-                return
+            if cancel_flag.is_set():
+                raise InterruptedError("Cancelled")
 
             # Load audio
-            audio, sr = sf.read(source)
+            audio, sr = sf.read(self.source_path.get())
             if audio.ndim == 2 and audio.shape[1] > 2:
                 audio = np.mean(audio, axis=1)
 
-            if task["cancel_flag"].is_set():
-                return
+            if cancel_flag.is_set():
+                raise InterruptedError("Cancelled")
 
             # Convert
-            transpose = float(cfg["pitch"])
-            duration = len(audio) / sr
-            if duration > 30:
-                result = pipeline.convert_long_audio(audio, sample_rate=sr, transpose=transpose)
-            else:
-                result = pipeline.convert(audio, sample_rate=sr, transpose=transpose)
+            transpose = float(config["pitch"])
+            result = pipeline.convert(audio, sample_rate=sr, transpose=transpose)
 
-            if task["cancel_flag"].is_set():
-                return
+            if cancel_flag.is_set():
+                raise InterruptedError("Cancelled")
 
-            # Save to temp location
-            out_dir = os.path.join("/tmp", "soma_comparison")
-            os.makedirs(out_dir, exist_ok=True)
+            # Save with task ID in filename (fix #9)
+            source_name = os.path.splitext(os.path.basename(self.source_path.get()))[0]
+            output_filename = (
+                f"{source_name}_t{task_id}_{config['model']}_"
+                f"pitch{config['pitch']:+d}_{config['f0_method']}_"
+                f"{config['feature_extractor']}.wav"
+            )
+            output_path = os.path.join(self.output_dir.get(), output_filename)
+            sf.write(output_path, result, output_sr)
 
-            # Auto-name: model_pitch_f0_feature.wav
-            pitch_str = f"p{cfg['pitch']:+d}" if cfg["pitch"] != 0 else "p0"
-            out_name = f"{cfg['model']}_{pitch_str}_{cfg['f0_method']}_{cfg['feature_extractor']}_t{task['id']}.wav"
-            out_path = os.path.join(out_dir, out_name)
-            sf.write(out_path, result, cfg["sample_rate"])
-
-            elapsed = time.time() - t0
-            task["output_path"] = out_path
-            task["elapsed"] = elapsed
             task["status"] = STATUS_DONE
+            task["result_path"] = output_path
+            task["duration"] = time.time() - start_time
+
+            self.safe_after(0, lambda: self._log(
+                f"Task #{task_id} completed in {task['duration']:.1f}s"
+            ))
+
+        except InterruptedError:
+            task["status"] = STATUS_CANCELLED
+            task["duration"] = time.time() - start_time
+            self.safe_after(0, lambda: self._log(f"Task #{task_id} cancelled"))
 
         except Exception as e:
-            task["elapsed"] = time.time() - t0
-            task["error"] = str(e)
             task["status"] = STATUS_FAILED
+            task["error"] = str(e)
+            task["duration"] = time.time() - start_time
+            self.safe_after(0, lambda: self._log(f"Task #{task_id} failed: {e}"))
 
-    def _on_task_done(self, task: Dict, future: Future):
-        """Callback when a task future completes."""
-        # Schedule UI update on main thread
-        self.after(0, self._refresh_task_tree)
-        self.after(0, lambda: self._append_result_log(task))
+        finally:
+            # Update treeview and count from main thread
+            self.safe_after(0, lambda: self._update_task_in_tree(task_id, task))
+            self.safe_after(0, self._update_task_count)
+            self.safe_after(0, self._check_all_done)
 
-    def _append_result_log(self, task: Dict):
-        """Append a result line to the result text area."""
-        cfg = task["config"]
-        self._result_text.configure(state=tk.NORMAL)
-        if task["status"] == STATUS_DONE:
-            line = (
-                f"[#{task['id']}] {cfg['model']}  pitch={cfg['pitch']:+d}  "
-                f"f0={cfg['f0_method']}  feat={cfg['feature_extractor']}  "
-                f"SR={cfg['sample_rate']}  |  {task['elapsed']:.1f}s  |  "
-                f"{os.path.basename(task['output_path'])}"
+    def _check_all_done(self):
+        """Check if all tasks are done and stop the timer."""
+        with self._tasks_lock:
+            all_done = all(
+                t["status"] in (STATUS_DONE, STATUS_FAILED, STATUS_CANCELLED)
+                for t in self._tasks
             )
-        elif task["status"] == STATUS_FAILED:
-            line = f"[#{task['id']}] FAILED: {task.get('error', 'unknown error')}"
-        else:
-            line = f"[#{task['id']}] {task['status']}"
+        if all_done and self._processing:
+            self._processing = False
+            if self._start_time:
+                elapsed = time.time() - self._start_time
+                minutes = int(elapsed // 60)
+                seconds = int(elapsed % 60)
+                self.elapsed_var.set(f"{minutes}:{seconds:02d} (all done)")
 
-        self._result_text.insert(tk.END, line + "\n")
-        self._result_text.see(tk.END)
-        self._result_text.configure(state=tk.DISABLED)
+            with self._tasks_lock:
+                done_count = sum(1 for t in self._tasks if t["status"] == STATUS_DONE)
+            self._log(f"All tasks finished. {done_count} succeeded.")
 
-    # ═══════════════════════════════════════════════════════════════════
-    #  Playback
-    # ═══════════════════════════════════════════════════════════════════
+            if done_count > 0:
+                result = messagebox.askyesno(
+                    "Comparison Complete",
+                    f"All comparison tasks finished!\n\n"
+                    f"{done_count} result(s) saved to:\n{self.output_dir.get()}\n\n"
+                    f"Open output folder?"
+                )
+                if result:
+                    self._open_output_folder()
 
-    def _play_selected(self):
-        """Play the selected completed task's output audio."""
-        task = self._get_selected_task()
-        if not task or task["status"] != STATUS_DONE or not task["output_path"]:
-            messagebox.showinfo("Info", "Select a completed task to play.")
-            return
-        if not os.path.isfile(task["output_path"]):
-            messagebox.showerror("Error", f"Output file not found:\n{task['output_path']}")
-            return
+    # ── Playback (cross-platform, fix #3) ──────────────────────────────
 
-        self._stop_playback()  # Stop any current playback
+    def _play_audio_file(self, filepath: str):
+        """Play audio file using system default player (cross-platform, fix #3).
 
-        cfg = task["config"]
-        self.now_playing_var.set(
-            f"\U0001f3b5 Playing #{task['id']}: {cfg['model']}  "
-            f"pitch={cfg['pitch']:+d}  f0={cfg['f0_method']}  "
-            f"({task['elapsed']:.1f}s)"
-        )
-
-        self._playback_process = self._open_audio_file(task["output_path"])
-
-    def _ab_switch(self):
-        """A/B switch: rapidly toggle between two selected completed tasks.
-
-        Plays the first selected task, then after a short delay plays the second.
-        If only one task is selected, plays it. If none, shows info.
+        Uses subprocess.Popen on all platforms for consistent stop behavior.
+        On macOS: afplay (can be killed)
+        On Linux: xdg-open
+        On Windows: powershell -c (Start-Player) or ffplay if available
         """
-        sel = self._task_tree.selection()
-        completed_tasks = []
-        for item_id in sel:
-            vals = self._task_tree.item(item_id)["values"]
-            task_id = int(vals[0])
-            for t in self._tasks:
-                if t["id"] == task_id and t["status"] == STATUS_DONE and t["output_path"]:
-                    completed_tasks.append(t)
-                    break
-
-        if not completed_tasks:
-            messagebox.showinfo("Info", "Select one or two completed tasks for A/B switch.")
+        if not os.path.isfile(filepath):
+            messagebox.showwarning("Warning", f"File not found:\n{filepath}")
             return
-
-        def _ab_worker():
-            for i, task in enumerate(completed_tasks[:2]):
-                label = "A" if i == 0 else "B"
-                cfg = task["config"]
-                self.after(0, lambda l=label, t=task: self.now_playing_var.set(
-                    f"\U0001f500 [{l}] Playing #{t['id']}: {cfg['model']}  pitch={cfg['pitch']:+d}"
-                ))
-                proc = self._open_audio_file(task["output_path"])
-                # Wait for playback to roughly finish (estimate ~duration + 1s buffer)
-                try:
-                    import soundfile as sf
-                    info = sf.info(task["output_path"])
-                    wait = min(info.duration + 1.0, 30.0)
-                except Exception:
-                    wait = 5.0
-                time.sleep(wait)
-                if proc and proc.poll() is None:
-                    proc.terminate()
-
-            self.after(0, lambda: self.now_playing_var.set("A/B switch complete"))
 
         self._stop_playback()
-        threading.Thread(target=_ab_worker, daemon=True).start()
+
+        try:
+            if sys.platform == "darwin":
+                # macOS: afplay can be killed via process group
+                proc = subprocess.Popen(
+                    ["afplay", filepath],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            elif sys.platform == "win32":
+                # Windows: use PowerShell to play via Windows Media Player COM
+                # This allows us to get a process handle and kill it
+                ps_cmd = (
+                    f'$player = New-Object System.Media.SoundPlayer("{filepath}"); '
+                    f'$player.Play(); '
+                    f'Start-Sleep -Seconds 999'
+                )
+                proc = subprocess.Popen(
+                    ["powershell", "-NoProfile", "-Command", ps_cmd],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                )
+            else:
+                # Linux: xdg-open
+                proc = subprocess.Popen(
+                    ["xdg-open", filepath],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+
+            with self._playback_lock:
+                self._current_player = proc
+
+        except Exception as e:
+            messagebox.showerror("Playback Error", f"Could not play audio:\n{e}")
 
     def _stop_playback(self):
-        """Stop any currently playing audio."""
-        if self._playback_process and self._playback_process.poll() is None:
-            self._playback_process.terminate()
-            self._playback_process = None
-        self.now_playing_var.set("Playback stopped")
+        """Stop current playback (cross-platform, fix #3)."""
+        with self._playback_lock:
+            if self._current_player is not None:
+                try:
+                    self._current_player.terminate()
+                    self._current_player.wait(timeout=2)
+                except Exception:
+                    try:
+                        self._current_player.kill()
+                    except Exception:
+                        pass
+                self._current_player = None
 
-    @staticmethod
-    def _open_audio_file(filepath: str) -> Optional[subprocess.Popen]:
-        """Open an audio file with the system default player."""
-        try:
-            if sys.platform == "win32":
-                os.startfile(filepath)
-                return None
-            elif sys.platform == "darwin":
-                return subprocess.Popen(["afplay", filepath], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                # Linux: try xdg-open, fall back to aplay/aplay
-                return subprocess.Popen(
-                    ["xdg-open", filepath],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-        except Exception:
-            return None
+    def _play_selected_a(self):
+        """Play the first selected completed task."""
+        selection = self.task_tree.selection()
+        if not selection:
+            messagebox.showinfo("Info", "Select a completed task to play.")
+            return
 
-    # ═══════════════════════════════════════════════════════════════════
-    #  Export
-    # ═══════════════════════════════════════════════════════════════════
+        task_id = int(selection[0])
+        with self._tasks_lock:
+            task = next((t for t in self._tasks if t["id"] == task_id), None)
 
-    def _export_all(self):
-        """Export all completed task outputs to a user-chosen directory."""
-        done_tasks = [t for t in self._tasks if t["status"] == STATUS_DONE and t["output_path"]]
+        if not task or task["status"] != STATUS_DONE or not task["result_path"]:
+            messagebox.showwarning("Warning", "Selected task has no completed result.")
+            return
+
+        self._play_audio_file(task["result_path"])
+        self._log(f"Playing A: Task #{task_id}")
+
+    def _play_selected_b(self):
+        """Play the second selected completed task (or first if only one selected)."""
+        selection = self.task_tree.selection()
+        if not selection:
+            messagebox.showinfo("Info", "Select a completed task to play.")
+            return
+
+        # Use second selected item if available, otherwise first
+        idx = min(1, len(selection) - 1)
+        task_id = int(selection[idx])
+        with self._tasks_lock:
+            task = next((t for t in self._tasks if t["id"] == task_id), None)
+
+        if not task or task["status"] != STATUS_DONE or not task["result_path"]:
+            messagebox.showwarning("Warning", "Selected task has no completed result.")
+            return
+
+        self._play_audio_file(task["result_path"])
+        self._log(f"Playing B: Task #{task_id}")
+
+    def _ab_switch_play(self):
+        """A/B switch playback: play first selected, then second after a delay."""
+        selection = self.task_tree.selection()
+        if len(selection) < 2:
+            messagebox.showinfo("Info", "Select exactly 2 completed tasks for A/B comparison.")
+            return
+
+        task_a_id = int(selection[0])
+        task_b_id = int(selection[1])
+
+        with self._tasks_lock:
+            task_a = next((t for t in self._tasks if t["id"] == task_a_id), None)
+            task_b = next((t for t in self._tasks if t["id"] == task_b_id), None)
+
+        if not task_a or not task_b:
+            messagebox.showwarning("Warning", "Could not find selected tasks.")
+            return
+
+        if task_a["status"] != STATUS_DONE or task_b["status"] != STATUS_DONE:
+            messagebox.showwarning("Warning", "Both tasks must be completed.")
+            return
+
+        if not task_a["result_path"] or not task_b["result_path"]:
+            messagebox.showwarning("Warning", "Result files not found.")
+            return
+
+        # Play A first, then B after a delay
+        self._play_audio_file(task_a["result_path"])
+        self._log(f"A/B Switch: Playing A (Task #{task_a_id})...")
+
+        # Schedule B playback after 5 seconds
+        self.safe_after(5000, lambda: self._play_b_after_a(task_b_id, task_b["result_path"]))
+
+    def _play_b_after_a(self, task_id: int, filepath: str):
+        """Play task B after A has played (scheduled callback)."""
+        self._stop_playback()
+        self._play_audio_file(filepath)
+        self._log(f"A/B Switch: Playing B (Task #{task_id})...")
+
+    # ── Export ──────────────────────────────────────────────────────────
+
+    def _export_all_results(self):
+        """Export all completed results to a chosen directory."""
+        with self._tasks_lock:
+            done_tasks = [t for t in self._tasks if t["status"] == STATUS_DONE and t["result_path"]]
+
         if not done_tasks:
             messagebox.showinfo("Info", "No completed results to export.")
             return
 
         target_dir = filedialog.askdirectory(
-            title="Export Results To", initialdir=self._last_dir
+            title="Select Export Directory",
+            initialdir=self._last_directory,
         )
         if not target_dir:
             return
 
-        self._last_dir = target_dir
-        _save_settings({"comparison_last_dir": target_dir})
-
-        copied = 0
+        import shutil
+        exported = 0
         for task in done_tasks:
-            cfg = task["config"]
-            src = task["output_path"]
-            pitch_str = f"pitch{cfg['pitch']:+d}" if cfg["pitch"] != 0 else "pitch0"
-            name = f"{cfg['model']}_{pitch_str}_{cfg['f0_method']}_{cfg['feature_extractor']}_t{task['id']}.wav"
-            dst = os.path.join(target_dir, name)
-            try:
-                import shutil
-                shutil.copy2(src, dst)
-                copied += 1
-            except Exception:
-                pass
+            source_path = task["result_path"]
+            if source_path and os.path.isfile(source_path):
+                filename = os.path.basename(source_path)
+                dest_path = os.path.join(target_dir, filename)
+                try:
+                    shutil.copy2(source_path, dest_path)
+                    exported += 1
+                except Exception as e:
+                    self._log(f"Export failed for {filename}: {e}")
 
-        messagebox.showinfo(
-            "Export Complete",
-            f"Exported {copied}/{len(done_tasks)} result(s) to:\n{target_dir}"
-        )
+        self._log(f"Exported {exported} file(s) to {target_dir}")
+        messagebox.showinfo("Export Complete", f"Exported {exported} file(s) to:\n{target_dir}")
 
-    # ═══════════════════════════════════════════════════════════════════
-    #  Config save / load
-    # ═══════════════════════════════════════════════════════════════════
+    def _open_output_folder(self):
+        """Open output folder using common utility."""
+        if self.output_dir.get() and os.path.exists(self.output_dir.get()):
+            if not open_folder(self.output_dir.get()):
+                messagebox.showwarning("Warning", "Could not open folder.")
+        else:
+            messagebox.showwarning("Warning", "Output folder does not exist.")
+
+    # ── Config Save/Load ───────────────────────────────────────────────
 
     def _save_config(self):
-        """Save current task configs to a JSON file."""
-        configs = [t["config"] for t in self._tasks]
-        if not configs:
-            configs = [self._get_current_config()]
+        """Save current task configurations to JSON."""
+        with self._tasks_lock:
+            configs = [t["config"].copy() for t in self._tasks]
 
-        path = filedialog.asksaveasfilename(
+        if not configs:
+            messagebox.showinfo("Info", "No tasks to save.")
+            return
+
+        filepath = filedialog.asksaveasfilename(
             title="Save Comparison Config",
             defaultextension=".json",
-            filetypes=[("JSON files", "*.json")],
-            initialdir=self._last_dir,
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialdir=self._last_directory,
         )
-        if not path:
+        if not filepath:
             return
 
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({"tasks": configs, "source": self.source_path.get()}, f,
-                          ensure_ascii=False, indent=2)
-            messagebox.showinfo("Saved", f"Config saved to:\n{path}")
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump({"tasks": configs, "source": self.source_path.get()}, f, indent=2)
+            self._log(f"Config saved to {filepath}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save config:\n{e}")
 
     def _load_config(self):
-        """Load task configs from a JSON file."""
-        path = filedialog.askopenfilename(
+        """Load task configurations from JSON."""
+        filepath = filedialog.askopenfilename(
             title="Load Comparison Config",
-            filetypes=[("JSON files", "*.json")],
-            initialdir=self._last_dir,
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialdir=self._last_directory,
         )
-        if not path:
+        if not filepath:
             return
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             configs = data.get("tasks", [])
@@ -842,11 +1224,55 @@ class ComparisonPage(BasePage):
 
             if source and os.path.isfile(source):
                 self.source_path.set(source)
-                self._update_file_info(source)
 
-            for cfg in configs:
-                self._add_task(cfg)
+            for config in configs:
+                with self._tasks_lock:
+                    self._task_counter += 1
+                    task_id = self._task_counter
+                    task = {
+                        "id": task_id,
+                        "config": config,
+                        "status": STATUS_QUEUED,
+                        "result_path": None,
+                        "error": None,
+                        "duration": None,
+                        "cancel_flag": threading.Event(),
+                        "uuid": uuid.uuid4().hex[:8],
+                    }
+                    self._tasks.append(task)
 
-            messagebox.showinfo("Loaded", f"Loaded {len(configs)} task(s) from config.")
+                self.task_tree.insert("", tk.END, iid=str(task_id), values=(
+                    task_id,
+                    config.get("model", "?"),
+                    f"{config.get('pitch', 0):+d}",
+                    config.get("f0_method", "?"),
+                    config.get("feature_extractor", "?"),
+                    STATUS_DISPLAY[STATUS_QUEUED],
+                    "--",
+                ))
+
+            self._update_task_count()
+            self._log(f"Loaded {len(configs)} task(s) from {filepath}")
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load config:\n{e}")
+
+    # ── Logging ────────────────────────────────────────────────────────
+
+    def _log(self, message: str):
+        """Add message to log display (main thread only)."""
+        self.log_display.configure(state=tk.NORMAL)
+        self.log_display.insert(tk.END, message + "\n")
+        self.log_display.see(tk.END)
+        self.log_display.configure(state=tk.DISABLED)
+
+    # ── Elapsed Timer ──────────────────────────────────────────────────
+
+    def _tick_elapsed(self):
+        """Update elapsed time display."""
+        if self._start_time is not None and self._processing:
+            elapsed = time.time() - self._start_time
+            minutes = int(elapsed // 60)
+            seconds = int(elapsed % 60)
+            self.elapsed_var.set(f"{minutes}:{seconds:02d}")
+            self._elapsed_timer_id = self.safe_after(1000, self._tick_elapsed)

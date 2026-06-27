@@ -4,6 +4,17 @@ Inference page for SOMA GUI.
 Provides interface for AI cover generation (voice conversion).
 Enhanced with: advanced parameter controls, multi-stage progress, file info,
 directory memory, auto-naming, completion dialog, and error handling.
+
+Code quality fixes applied:
+- SettingsManager singleton for thread-safe settings access
+- threading.Event for cancel mechanism (unified with comparison page)
+- Widget alive guards on all after() callbacks
+- Unified UI reset logic after processing completes/stops/errors
+- Common open_folder utility
+- Model scan with mtime-based cache (fix #7)
+- Limited model search depth (fix #10)
+- Shared parameter constants (fix #11)
+- File info loading in background thread (fix #12)
 """
 
 import tkinter as tk
@@ -11,34 +22,16 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 import os
 import time
-import json
 from typing import Optional, List
 from gui.pages.base import BasePage
 from gui.styles import Colors, Fonts
-
-
-# Persistent settings file
-_SETTINGS_FILE = os.path.join(os.path.expanduser("~"), ".soma_gui_settings.json")
-
-
-def _load_settings() -> dict:
-    """Load persistent GUI settings from disk."""
-    try:
-        with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _save_settings(data: dict):
-    """Save persistent GUI settings to disk."""
-    try:
-        existing = _load_settings()
-        existing.update(data)
-        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
-    except OSError:
-        pass
+from gui.utils import (
+    SettingsManager, open_folder, AUDIO_FILETYPES,
+    FEATURE_EXTRACTORS, F0_METHODS, DEVICES, SAMPLE_RATES,
+    DEFAULT_SAMPLE_RATE, DEFAULT_F0_METHOD, DEFAULT_FEATURE_EXTRACTOR,
+    DEFAULT_DEVICE, PITCH_MIN, PITCH_MAX,
+    MODEL_CACHE_TTL, MODEL_SEARCH_MAX_DEPTH,
+)
 
 
 class InferencePage(BasePage):
@@ -66,29 +59,11 @@ class InferencePage(BasePage):
     PAGE_ICON = "\U0001f3b5"
     PAGE_DESCRIPTION = "Generate covers"
 
-    # Feature extractors
-    FEATURE_EXTRACTORS = {
-        "hubert": "HuBERT Base (default, good quality)",
-        "contentvec": "ContentVec (alternative features)",
-    }
-
-    # F0 extraction methods
-    F0_METHODS = {
-        "dio": "DIO (fast, default)",
-        "harvest": "Harvest (better quality, slower)",
-        "rmvpe": "RMVPE (deep learning, best quality)",
-        "crepe": "Crepe (neural pitch, high quality)",
-    }
-
-    # Devices
-    DEVICES = {
-        "auto": "Auto-detect (GPU if available)",
-        "cpu": "CPU (always available)",
-        "cuda": "CUDA (NVIDIA GPU)",
-    }
-
-    # Sample rates
-    SAMPLE_RATES = ["16000", "32000", "40000", "44100", "48000"]
+    # Use shared constants (fix #11)
+    FEATURE_EXTRACTORS = FEATURE_EXTRACTORS
+    F0_METHODS = F0_METHODS
+    DEVICES = DEVICES
+    SAMPLE_RATES = SAMPLE_RATES
 
     # Quality presets (for backward compatibility)
     QUALITY_PRESETS = {
@@ -101,8 +76,13 @@ class InferencePage(BasePage):
         """Initialize the inference page."""
         super().__init__(parent, app)
 
+        # Settings manager (singleton, thread-safe)
+        self._settings = SettingsManager()
+
+        # Cancel event (threading.Event for unified cancel mechanism, fix #2)
+        self._cancel_event = threading.Event()
+
         # State
-        self._is_processing = False
         self._processing_thread: Optional[threading.Thread] = None
         self._start_time: Optional[float] = None
         self._elapsed_timer_id: Optional[str] = None
@@ -115,10 +95,10 @@ class InferencePage(BasePage):
         self.quality = tk.StringVar(value="High")
 
         # Advanced parameters
-        self.feature_extractor = tk.StringVar(value="hubert")
-        self.f0_method = tk.StringVar(value="dio")
-        self.device = tk.StringVar(value="auto")
-        self.output_sample_rate = tk.StringVar(value="40000")
+        self.feature_extractor = tk.StringVar(value=DEFAULT_FEATURE_EXTRACTOR)
+        self.f0_method = tk.StringVar(value=DEFAULT_F0_METHOD)
+        self.device = tk.StringVar(value=DEFAULT_DEVICE)
+        self.output_sample_rate = tk.StringVar(value=DEFAULT_SAMPLE_RATE)
         self.cluster_ratio = tk.DoubleVar(value=0.0)
 
         # Preprocessing options
@@ -139,12 +119,17 @@ class InferencePage(BasePage):
         self.file_info_filesize = tk.StringVar(value="--")
         self.file_info_filename = tk.StringVar(value="No file selected")
 
-        # Remembered last directory
-        settings = _load_settings()
-        self._last_directory = settings.get("inference_last_dir", os.path.expanduser("~"))
+        # Remembered last directory (from SettingsManager)
+        self._last_directory = self._settings.get(
+            "inference_last_dir", os.path.expanduser("~")
+        )
 
         # Available models
         self._available_models: List[str] = []
+
+        # Model scan cache (fix #7)
+        self._model_cache: List[str] = []
+        self._model_cache_time: float = 0.0
 
     def _create_widgets(self):
         """Create inference page widgets."""
@@ -284,7 +269,7 @@ class InferencePage(BasePage):
         ttk.Label(pitch_frame, text="Pitch Shift:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
 
         pitch_spinbox = tk.Spinbox(
-            pitch_frame, from_=-12, to=12,
+            pitch_frame, from_=PITCH_MIN, to=PITCH_MAX,
             textvariable=self.pitch_shift,
             font=(Fonts.FAMILY, Fonts.SIZE_BODY),
             bg=Colors.BG_INPUT, fg=Colors.TEXT_PRIMARY,
@@ -519,24 +504,16 @@ class InferencePage(BasePage):
 
     def _browse_source(self):
         """Open file dialog to select source audio."""
-        filetypes = [
-            ("Audio files", "*.wav *.mp3 *.flac *.ogg"),
-            ("WAV files", "*.wav"),
-            ("MP3 files", "*.mp3"),
-            ("FLAC files", "*.flac"),
-            ("All files", "*.*")
-        ]
-
         filename = filedialog.askopenfilename(
             title="Select Source Audio",
-            filetypes=filetypes,
+            filetypes=AUDIO_FILETYPES,
             initialdir=self._last_directory,
         )
 
         if filename:
             self.source_path.set(filename)
             self._last_directory = os.path.dirname(filename)
-            _save_settings({"inference_last_dir": self._last_directory})
+            self._settings.set("inference_last_dir", self._last_directory)
 
             # Auto-generate output path
             base, ext = os.path.splitext(filename)
@@ -561,9 +538,9 @@ class InferencePage(BasePage):
         if filename:
             self.output_path.set(filename)
             self._last_directory = os.path.dirname(filename)
-            _save_settings({"inference_last_dir": self._last_directory})
+            self._settings.set("inference_last_dir", self._last_directory)
 
-    # ── File Info ──────────────────────────────────────────────────────
+    # ── File Info (background thread, fix #12) ─────────────────────────
 
     def _on_source_path_changed(self, *args):
         """Triggered when source_path variable changes."""
@@ -582,7 +559,7 @@ class InferencePage(BasePage):
         self.file_info_filesize.set("--")
 
     def _load_file_info(self, filepath: str):
-        """Load and display audio file information."""
+        """Load and display audio file information (runs in background thread)."""
         try:
             size_bytes = os.path.getsize(filepath)
             if size_bytes < 1024 * 1024:
@@ -591,8 +568,8 @@ class InferencePage(BasePage):
                 size_str = f"{size_bytes / 1024 / 1024:.2f} MB"
 
             filename = os.path.basename(filepath)
-            self.after(0, lambda: self.file_info_filename.set(filename))
-            self.after(0, lambda: self.file_info_filesize.set(size_str))
+            self.safe_after(0, lambda: self.file_info_filename.set(filename))
+            self.safe_after(0, lambda: self.file_info_filesize.set(size_str))
 
             try:
                 import soundfile as sf
@@ -601,18 +578,18 @@ class InferencePage(BasePage):
                 minutes = int(duration_sec // 60)
                 seconds = int(duration_sec % 60)
 
-                self.after(0, lambda: self.file_info_duration.set(f"{minutes}:{seconds:02d}"))
-                self.after(0, lambda: self.file_info_samplerate.set(f"{info.samplerate} Hz"))
+                self.safe_after(0, lambda: self.file_info_duration.set(f"{minutes}:{seconds:02d}"))
+                self.safe_after(0, lambda: self.file_info_samplerate.set(f"{info.samplerate} Hz"))
                 ch_map = {1: "Mono", 2: "Stereo"}
-                self.after(0, lambda: self.file_info_channels.set(
+                self.safe_after(0, lambda: self.file_info_channels.set(
                     ch_map.get(info.channels, f"{info.channels} ch")
                 ))
             except Exception:
-                self.after(0, lambda: self.file_info_duration.set("N/A"))
-                self.after(0, lambda: self.file_info_samplerate.set("N/A"))
-                self.after(0, lambda: self.file_info_channels.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_duration.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_samplerate.set("N/A"))
+                self.safe_after(0, lambda: self.file_info_channels.set("N/A"))
         except Exception:
-            self.after(0, self._reset_file_info)
+            self.safe_after(0, self._reset_file_info)
 
     # ── Description Updaters ───────────────────────────────────────────
 
@@ -632,22 +609,31 @@ class InferencePage(BasePage):
         val = self.cluster_ratio.get()
         self.cluster_value_label.configure(text=f"{val:.2f}")
 
-    # ── Model Management ───────────────────────────────────────────────
+    # ── Model Management (with cache, fix #7, and depth limit, fix #10) ─
 
     def _refresh_models(self):
-        """Refresh the list of available models."""
-        # Scan model directory for .pth files
-        model_dirs = [
-            os.path.join(os.path.expanduser("~"), ".soma", "models"),
-            os.path.join(os.getcwd(), "assets", "models"),
-        ]
+        """Refresh the list of available models with mtime-based cache."""
+        now = time.time()
+        if self._model_cache and (now - self._model_cache_time) < MODEL_CACHE_TTL:
+            # Use cached results
+            models = self._model_cache
+        else:
+            # Scan model directories
+            model_dirs = [
+                os.path.join(os.path.expanduser("~"), ".soma", "models"),
+                os.path.join(os.getcwd(), "assets", "models"),
+            ]
 
-        models = []
-        for model_dir in model_dirs:
-            if os.path.isdir(model_dir):
-                for f in os.listdir(model_dir):
-                    if f.endswith(".pth"):
-                        models.append(f[:-4])  # Remove .pth extension
+            models = []
+            for model_dir in model_dirs:
+                if os.path.isdir(model_dir):
+                    for f in os.listdir(model_dir):
+                        if f.endswith(".pth"):
+                            models.append(f[:-4])
+
+            # Cache results
+            self._model_cache = models
+            self._model_cache_time = now
 
         if not models:
             models = ["No models available"]
@@ -658,6 +644,37 @@ class InferencePage(BasePage):
         if self._available_models and self._available_models[0] != "No models available":
             self._model_combo.set(self._available_models[0])
 
+    def _find_model_file(self, model_name: str) -> Optional[str]:
+        """Find a model file by name in known model directories (depth-limited, fix #10)."""
+        search_dirs = [
+            os.path.join(os.path.expanduser("~"), ".soma", "models"),
+            os.path.join(os.getcwd(), "assets", "models"),
+        ]
+
+        for search_dir in search_dirs:
+            if not os.path.isdir(search_dir):
+                continue
+
+            # Direct match first
+            direct = os.path.join(search_dir, f"{model_name}.pth")
+            if os.path.isfile(direct):
+                return direct
+
+            # Depth-limited recursive search (fix #10)
+            for root, dirs, files in os.walk(search_dir):
+                # Calculate current depth
+                rel = os.path.relpath(root, search_dir)
+                depth = 0 if rel == "." else rel.count(os.sep) + 1
+                if depth >= MODEL_SEARCH_MAX_DEPTH:
+                    dirs.clear()  # Prune deeper directories
+                    continue
+
+                for f in files:
+                    if f == f"{model_name}.pth":
+                        return os.path.join(root, f)
+
+        return None
+
     # ── Logging ────────────────────────────────────────────────────────
 
     def _log(self, message: str):
@@ -667,6 +684,10 @@ class InferencePage(BasePage):
         self.log_display.see(tk.END)
         self.log_display.configure(state=tk.DISABLED)
 
+    def _set_stage(self, stage: str):
+        """Set the current processing stage (main thread only)."""
+        self.stage_var.set(stage)
+
     # ── Elapsed Timer ──────────────────────────────────────────────────
 
     def _start_elapsed_timer(self):
@@ -674,16 +695,19 @@ class InferencePage(BasePage):
         self._tick_elapsed()
 
     def _tick_elapsed(self):
-        if self._start_time is not None and self._is_processing:
+        if self._start_time is not None and not self._cancel_event.is_set():
             elapsed = time.time() - self._start_time
             minutes = int(elapsed // 60)
             seconds = int(elapsed % 60)
             self.elapsed_var.set(f"{minutes}:{seconds:02d}")
-            self._elapsed_timer_id = self.after(1000, self._tick_elapsed)
+            self._elapsed_timer_id = self.safe_after(1000, self._tick_elapsed)
 
     def _stop_elapsed_timer(self):
         if self._elapsed_timer_id is not None:
-            self.after_cancel(self._elapsed_timer_id)
+            try:
+                self.after_cancel(self._elapsed_timer_id)
+            except Exception:
+                pass
             self._elapsed_timer_id = None
         if self._start_time is not None:
             elapsed = time.time() - self._start_time
@@ -691,6 +715,18 @@ class InferencePage(BasePage):
             seconds = int(elapsed % 60)
             self.elapsed_var.set(f"{minutes}:{seconds:02d} (done)")
             self._start_time = None
+
+    # ── Unified UI Reset (fix #5) ──────────────────────────────────────
+
+    def _reset_ui_after_processing(self, status_text: str):
+        """
+        Unified UI state reset after processing completes, stops, or errors.
+        """
+        self.convert_btn.configure(state=tk.NORMAL)
+        self.stop_btn.configure(state=tk.DISABLED)
+        self.status_var.set(status_text)
+        self.stage_var.set("")
+        self._stop_elapsed_timer()
 
     # ── Conversion Logic ───────────────────────────────────────────────
 
@@ -713,8 +749,8 @@ class InferencePage(BasePage):
             messagebox.showwarning("Warning", "Please specify an output path.")
             return
 
-        # Update UI state
-        self._is_processing = True
+        # Reset cancel event and update UI state
+        self._cancel_event.clear()
         self.convert_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.NORMAL)
         self.status_var.set("Starting...")
@@ -747,14 +783,10 @@ class InferencePage(BasePage):
         self._processing_thread.start()
 
     def _stop_conversion(self):
-        """Stop the conversion process."""
-        self._is_processing = False
-        self.convert_btn.configure(state=tk.NORMAL)
-        self.stop_btn.configure(state=tk.DISABLED)
-        self.status_var.set("Stopped")
-        self.stage_var.set("")
-        self._stop_elapsed_timer()
-        self._log("Conversion stopped by user.")
+        """Stop the conversion process via cancel event."""
+        self._cancel_event.set()
+        self._log("Stop requested...")
+        # UI will be reset by the worker thread's finally block
 
     def _conversion_worker(self):
         """Background worker for voice conversion."""
@@ -763,10 +795,10 @@ class InferencePage(BasePage):
             import soundfile as sf
 
             # Stage 1: Load model
-            self.after(0, lambda: self._set_stage("Loading model"))
-            self.after(0, lambda: self.status_var.set("Loading model..."))
-            self.after(0, lambda: self.progress_var.set(5))
-            self.after(0, lambda: self._log("[1/3] Loading voice model..."))
+            self.safe_after(0, lambda: self._set_stage("Loading model"))
+            self.safe_after(0, lambda: self.status_var.set("Loading model..."))
+            self.safe_after(0, lambda: self.progress_var.set(5))
+            self.safe_after(0, lambda: self._log("[1/3] Loading voice model..."))
 
             from training.inference import RVCInference
 
@@ -798,29 +830,29 @@ class InferencePage(BasePage):
                 f0_method=self.f0_method.get(),
             )
 
-            if not self._is_processing:
+            if self._cancel_event.is_set():
                 return
 
-            self.after(0, lambda: self.progress_var.set(20))
-            self.after(0, lambda: self._log(f"Model loaded on {device_str}"))
+            self.safe_after(0, lambda: self.progress_var.set(20))
+            self.safe_after(0, lambda: self._log(f"Model loaded on {device_str}"))
 
             # Stage 2: Load and preprocess audio
-            self.after(0, lambda: self._set_stage("Loading audio"))
-            self.after(0, lambda: self.status_var.set("Loading audio..."))
-            self.after(0, lambda: self.progress_var.set(30))
-            self.after(0, lambda: self._log("[2/3] Loading source audio..."))
+            self.safe_after(0, lambda: self._set_stage("Loading audio"))
+            self.safe_after(0, lambda: self.status_var.set("Loading audio..."))
+            self.safe_after(0, lambda: self.progress_var.set(30))
+            self.safe_after(0, lambda: self._log("[2/3] Loading source audio..."))
 
             audio, sr = sf.read(self.source_path.get())
             if audio.ndim == 2 and audio.shape[1] > 2:
                 audio = np.mean(audio, axis=1)  # Downmix to mono
 
-            self.after(0, lambda: self._log(f"Audio loaded: {len(audio)} samples, {sr}Hz"))
+            self.safe_after(0, lambda: self._log(f"Audio loaded: {len(audio)} samples, {sr}Hz"))
 
             # Optional preprocessing
             if self.separate_vocals.get() or self.dereverb_audio.get():
-                self.after(0, lambda: self._set_stage("Preprocessing"))
-                self.after(0, lambda: self.status_var.set("Preprocessing audio..."))
-                self.after(0, lambda: self.progress_var.set(35))
+                self.safe_after(0, lambda: self._set_stage("Preprocessing"))
+                self.safe_after(0, lambda: self.status_var.set("Preprocessing audio..."))
+                self.safe_after(0, lambda: self.progress_var.set(35))
 
                 try:
                     from separators.audio_separator import AudioSeparator, SeparationMode
@@ -828,46 +860,46 @@ class InferencePage(BasePage):
                     separator = AudioSeparator()
 
                     if self.dereverb_audio.get():
-                        self.after(0, lambda: self._log("Applying dereverberation..."))
+                        self.safe_after(0, lambda: self._log("Applying dereverberation..."))
                         audio = separator.dereverb(audio)
 
                     if self.separate_vocals.get():
-                        self.after(0, lambda: self._log("Separating vocals..."))
+                        self.safe_after(0, lambda: self._log("Separating vocals..."))
                         mode = SeparationMode.TWO_STEMS
                         vocals, _ = separator.separate(audio, mode=mode, sample_rate=sr)
                         audio = vocals
-                        self.after(0, lambda: self._log("Vocals separated."))
+                        self.safe_after(0, lambda: self._log("Vocals separated."))
                 except ImportError:
-                    self.after(0, lambda: self._log("Warning: Preprocessing skipped (missing deps)"))
+                    self.safe_after(0, lambda: self._log("Warning: Preprocessing skipped (missing deps)"))
 
-            if not self._is_processing:
+            if self._cancel_event.is_set():
                 return
 
             # Stage 3: Voice conversion
-            self.after(0, lambda: self._set_stage("Voice conversion"))
-            self.after(0, lambda: self.status_var.set("Converting voice..."))
-            self.after(0, lambda: self.progress_var.set(50))
-            self.after(0, lambda: self._log("[3/3] Running voice conversion..."))
+            self.safe_after(0, lambda: self._set_stage("Voice conversion"))
+            self.safe_after(0, lambda: self.status_var.set("Converting voice..."))
+            self.safe_after(0, lambda: self.progress_var.set(50))
+            self.safe_after(0, lambda: self._log("[3/3] Running voice conversion..."))
 
             transpose = float(self.pitch_shift.get())
 
             # Use chunked conversion for long audio
             duration_sec = len(audio) / sr
             if duration_sec > 30:
-                self.after(0, lambda: self._log(f"Long audio ({duration_sec:.1f}s), using chunked mode..."))
+                self.safe_after(0, lambda: self._log(f"Long audio ({duration_sec:.1f}s), using chunked mode..."))
                 result = pipeline.convert_long_audio(
                     audio, sample_rate=sr, transpose=transpose
                 )
             else:
                 result = pipeline.convert(audio, sample_rate=sr, transpose=transpose)
 
-            if not self._is_processing:
+            if self._cancel_event.is_set():
                 return
 
             # Save output
-            self.after(0, lambda: self._set_stage("Saving output"))
-            self.after(0, lambda: self.status_var.set("Saving output..."))
-            self.after(0, lambda: self.progress_var.set(90))
+            self.safe_after(0, lambda: self._set_stage("Saving output"))
+            self.safe_after(0, lambda: self.status_var.set("Saving output..."))
+            self.safe_after(0, lambda: self.progress_var.set(90))
 
             output_dir = os.path.dirname(self.output_path.get())
             if output_dir:
@@ -875,101 +907,53 @@ class InferencePage(BasePage):
 
             sf.write(self.output_path.get(), result, output_sr)
 
-            self.after(0, lambda: self.progress_var.set(100))
-            self.after(0, lambda: self._log(f"Output saved: {self.output_path.get()}"))
-            self.after(0, self._conversion_complete)
+            self.safe_after(0, lambda: self.progress_var.set(100))
+            self.safe_after(0, lambda: self._log(f"Output saved: {self.output_path.get()}"))
+            self.safe_after(0, self._conversion_complete)
 
         except ImportError as e:
             err_msg = f"Missing dependency: {e}"
-            self.after(0, lambda: self._log(f"ERROR: {err_msg}"))
-            self.after(0, lambda: self.status_var.set("Error"))
-            self.after(0, self._conversion_error)
+            self.safe_after(0, lambda: self._log(f"ERROR: {err_msg}"))
+            self.safe_after(0, lambda: self.status_var.set("Error"))
+            self.safe_after(0, self._conversion_error)
 
         except Exception as e:
             err_msg = str(e)
-            self.after(0, lambda: self._log(f"ERROR: {err_msg}"))
-            self.after(0, lambda: self.status_var.set("Error"))
-            self.after(0, self._conversion_error)
+            self.safe_after(0, lambda: self._log(f"ERROR: {err_msg}"))
+            self.safe_after(0, lambda: self.status_var.set("Error"))
+            self.safe_after(0, self._conversion_error)
 
-    def _find_model_file(self, model_name: str) -> Optional[str]:
-        """Find a model file by name in known model directories."""
-        search_dirs = [
-            os.path.join(os.path.expanduser("~"), ".soma", "models"),
-            os.path.join(os.getcwd(), "assets", "models"),
-        ]
-
-        for search_dir in search_dirs:
-            if not os.path.isdir(search_dir):
-                continue
-            # Direct match: model_name.pth
-            direct = os.path.join(search_dir, f"{model_name}.pth")
-            if os.path.isfile(direct):
-                return direct
-            # Recursive search
-            for root, dirs, files in os.walk(search_dir):
-                for f in files:
-                    if f == f"{model_name}.pth" or f == model_name:
-                        return os.path.join(root, f)
-
-        return None
-
-    def _set_stage(self, stage_text: str):
-        """Update the stage indicator (must be called via self.after from worker)."""
-        self.stage_var.set(stage_text)
-
-    # ── Completion / Error ─────────────────────────────────────────────
+        finally:
+            # Always reset UI state when worker exits (fix #5)
+            if self._cancel_event.is_set():
+                self.safe_after(0, lambda: self._reset_ui_after_processing("Stopped"))
+                self.safe_after(0, lambda: self._log("Conversion stopped by user."))
 
     def _conversion_complete(self):
         """Handle conversion completion."""
-        self._is_processing = False
-        self.convert_btn.configure(state=tk.NORMAL)
-        self.stop_btn.configure(state=tk.DISABLED)
-        self.status_var.set("Completed")
-        self.stage_var.set("Done")
-        self.progress_var.set(100)
-        self._stop_elapsed_timer()
+        self._reset_ui_after_processing("Completed")
 
         self._log("")
-        self._log("Voice conversion completed successfully!")
+        self._log("Conversion completed successfully!")
 
+        # Show completion dialog
         output_dir = os.path.dirname(self.output_path.get())
         result = messagebox.askyesno(
             "Conversion Complete",
             f"Voice conversion completed successfully!\n\n"
-            f"Output: {self.output_path.get()}\n\n"
+            f"Output saved to:\n{self.output_path.get()}\n\n"
             f"Open output folder?"
         )
-        if result and output_dir and os.path.exists(output_dir):
-            self._open_folder(output_dir)
+        if result and output_dir:
+            open_folder(output_dir)
 
     def _conversion_error(self):
         """Handle conversion error."""
-        self._is_processing = False
-        self.convert_btn.configure(state=tk.NORMAL)
-        self.stop_btn.configure(state=tk.DISABLED)
-        self.stage_var.set("")
-        self._stop_elapsed_timer()
+        self._reset_ui_after_processing("Error")
 
         messagebox.showerror(
             "Conversion Failed",
             "Voice conversion failed.\n\n"
             "Please check the log for details.\n"
-            "Common issues: missing model file, incompatible audio format, or insufficient memory."
+            "Common issues: missing dependencies, model not found, or insufficient memory."
         )
-
-    @staticmethod
-    def _open_folder(folder: str):
-        """Open a folder in the system file explorer."""
-        import subprocess
-        import sys
-
-        folder = os.path.normpath(folder)
-        try:
-            if sys.platform == 'win32':
-                subprocess.run(['explorer', folder], check=False)
-            elif sys.platform == 'darwin':
-                subprocess.run(['open', folder], check=False)
-            else:
-                subprocess.run(['xdg-open', folder], check=False)
-        except Exception:
-            pass
