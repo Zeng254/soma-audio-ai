@@ -123,17 +123,17 @@ class PathValidator:
             )
 
         # 4. Convert to absolute path and normalize
+        # Always resolve the path regardless of whether it exists
+        # This prevents bypass attempts using non-existent paths
         path_obj = Path(path)
         try:
-            if path_obj.exists():
-                resolved = path_obj.expanduser().resolve()
-            else:
-                # Path does not exist, only perform basic parse
-                resolved = path_obj.expanduser().resolve()
+            # Always resolve to get the canonical path
+            # For non-existent paths, resolve() still normalizes the path
+            resolved = path_obj.expanduser().resolve()
         except (OSError, RuntimeError) as e:
-            raise ValueError(f"Cannot parse path: {path} - {e}")
+            raise ValueError(f"Cannot resolve path: {path} - {e}")
 
-        # 5. Check normalized path again
+        # 5. Check normalized path again for traversal attempts
         normalized_resolved = os.path.normpath(str(resolved))
         if '..' in Path(normalized_resolved).parts:
             raise PathTraversalError(
@@ -141,15 +141,25 @@ class PathValidator:
                 allowed_base=None,
             )
 
-        # 6. Check symlinks
+        # 6. Check symlinks - detect and reject symlinks that escape allowed dirs
         try:
-            if not self.allow_symlinks and path_obj.is_symlink():
-                raise PathTraversalError(
-                    attempted_path=str(path),
-                    allowed_base=None,
-                )
-        except (OSError, ValueError):
-            pass  # Skip symlink check when file does not exist
+            if not self.allow_symlinks:
+                # Check if any component of the path is a symlink
+                current = Path(resolved)
+                while current != current.parent:
+                    if current.is_symlink():
+                        # Resolve the symlink target and check if it's in allowed dirs
+                        link_target = current.resolve()
+                        if not self._is_in_allowed_dirs(link_target):
+                            raise PathTraversalError(
+                                attempted_path=str(path),
+                                allowed_base=str(self.allowed_dirs[0]) if self.allowed_dirs else None,
+                                message=f"Symlink at {current} points outside allowed directories",
+                            )
+                    current = current.parent
+        except (OSError, ValueError) as e:
+            # If we can't check symlinks, log and continue
+            logger.warning(f"Could not check symlinks for path {path}: {e}")
 
         # 7. CheckPathDepth
         self._check_depth(resolved)

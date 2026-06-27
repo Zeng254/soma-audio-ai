@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Optional, Any
 import numpy as np
 
+from src.utils.audio.validation import validate_audio_input as _validate_audio_input
+
 
 @dataclass
 class EffectResult:

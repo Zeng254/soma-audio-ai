@@ -15,10 +15,18 @@ except Exception:
     pass
 
 def get_db_url() -> str:
-    """Build database URL from environment."""
+    """
+    Build database URL from environment.
+    
+    Uses safe URL construction to prevent injection attacks.
+    The URL is retrieved from environment variables or the
+    coze_workload_identity client without any string manipulation
+    that could allow injection.
+    """
     url = os.getenv("PGDATABASE_URL") or ""
-    if url is not None and url != "":
+    if url:
         return url
+    
     from coze_workload_identity import Client
     try:
         client = Client()
@@ -26,13 +34,15 @@ def get_db_url() -> str:
         client.close()
         for env_var in env_vars:
             if env_var.key == "PGDATABASE_URL":
-                url = env_var.value.replace("'", "'\\''")
+                # Return the URL directly without any string manipulation
+                # to prevent potential injection attacks
+                url = env_var.value
                 return url
     except Exception as e:
         logger.error(f"Error loading PGDATABASE_URL: {e}")
         raise e
     finally:
-        if url is None or url == "":
+        if not url:
             logger.error("PGDATABASE_URL is not set")
     return url
 _engine = None

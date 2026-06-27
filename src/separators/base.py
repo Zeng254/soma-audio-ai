@@ -9,6 +9,8 @@ from typing import List, Optional
 from pathlib import Path
 import numpy as np
 
+from src.utils.audio.validation import validate_audio_input as _validate_audio_input
+
 
 @dataclass
 class SeparationResult:
@@ -118,35 +120,17 @@ class BaseSeparator(ABC):
     
     def validate_audio_input(self, audio: np.ndarray) -> np.ndarray:
         """
-        Validate and normalize audio input
+        Validate and normalize audio input.
+        
+        Uses the common validation function from src.utils.audio.validation.
         
         Args:
             audio: Input audio
             
         Returns:
-            Normalize audio array (channels, samples)
+            Normalized audio array (channels, samples)
         """
-        # Ensure it is numpy array
-        audio = np.array(audio, dtype=np.float32)
-        
-        # Process mono
-        if audio.ndim == 1:
-            audio = audio[np.newaxis, :]
-        elif audio.ndim == 2:
-            # Detect format: if first dim is small (<=8), likely channel_first
-            # If second dim is small (<=8), likely channel_last
-            dim0, dim1 = audio.shape
-            if dim0 <= 8 and dim1 > dim0 * 2:
-                # Already channel_first (channels, samples)
-                pass
-            elif dim1 <= 8 and dim0 > dim1 * 2:
-                # Channel_last (samples, channels), transpose
-                audio = audio.T
-            # Otherwise assume channel_first
-        else:
-            raise ValueError(f"Invalid audio shape: {audio.shape}")
-        
-        return audio
+        return _validate_audio_input(audio)
     
     def normalize_audio(self, audio: np.ndarray, target_db: float = -20.0) -> np.ndarray:
         """
