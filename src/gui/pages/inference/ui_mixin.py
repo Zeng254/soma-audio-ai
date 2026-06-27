@@ -108,7 +108,7 @@ class InferenceUIMixin:
 
     def _create_dropzone_section(self, parent: tk.Widget):
         """Create a visual drop zone for source audio files."""
-        card = self.create_card(parent, "Source Audio")
+        card = self.create_card(parent, "源音频")
 
         # Drop zone visual
         self.dropzone = tk.Frame(
@@ -155,17 +155,17 @@ class InferenceUIMixin:
 
     def _create_file_info_section(self, parent: tk.Widget):
         """Create file information display section."""
-        card = self.create_card(parent, "File Info")
+        card = self.create_card(parent, "文件信息")
 
         info_frame = ttk.Frame(card, style="Card.TFrame")
         info_frame.pack(fill=tk.X)
 
         info_items = [
-            ("File", self.file_info_filename),
-            ("Duration", self.file_info_duration),
-            ("Sample Rate", self.file_info_samplerate),
-            ("Channels", self.file_info_channels),
-            ("File Size", self.file_info_filesize),
+            ("文件名", self.file_info_filename),
+            ("时长", self.file_info_duration),
+            ("采样率", self.file_info_samplerate),
+            ("声道", self.file_info_channels),
+            ("文件大小", self.file_info_filesize),
         ]
 
         for label_text, var in info_items:
@@ -178,7 +178,7 @@ class InferenceUIMixin:
 
     def _create_model_section(self, parent: tk.Widget):
         """Create model selection section."""
-        card = self.create_card(parent, "Voice Model")
+        card = self.create_card(parent, "声音模型")
 
         model_frame = ttk.Frame(card, style="Card.TFrame")
         model_frame.pack(fill=tk.X)
@@ -202,7 +202,7 @@ class InferenceUIMixin:
 
     def _create_basic_options_section(self, parent: tk.Widget):
         """Create basic conversion options (pitch, quality)."""
-        card = self.create_card(parent, "Basic Options")
+        card = self.create_card(parent, "基本选项")
 
         # Pitch shift
         pitch_frame = ttk.Frame(card, style="Card.TFrame")
@@ -236,7 +236,7 @@ class InferenceUIMixin:
 
     def _create_advanced_options_section(self, parent: tk.Widget):
         """Create advanced parameter controls."""
-        card = self.create_card(parent, "Advanced Options")
+        card = self.create_card(parent, "高级选项")
 
         # Feature extractor
         fe_frame = ttk.Frame(card, style="Card.TFrame")
@@ -314,7 +314,7 @@ class InferenceUIMixin:
 
     def _create_preprocessing_section(self, parent: tk.Widget):
         """Create audio preprocessing options."""
-        card = self.create_card(parent, "Audio Preprocessing")
+        card = self.create_card(parent, "音频预处理")
 
         # Separate vocals checkbox
         separate_frame = ttk.Frame(card, style="Card.TFrame")
@@ -343,7 +343,7 @@ class InferenceUIMixin:
             values=["2-stem", "4-stem"], state="readonly", width=10
         )
         sep_mode_combo.pack(side=tk.LEFT)
-        ttk.Label(sep_mode_frame, text="(vocals + accompaniment)", style="Muted.TLabel").pack(
+        ttk.Label(sep_mode_frame, text="(人声 + 伴奏)", style="Muted.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
 
@@ -351,7 +351,7 @@ class InferenceUIMixin:
 
     def _create_output_section(self, parent: tk.Widget):
         """Create output configuration section."""
-        card = self.create_card(parent, "Output")
+        card = self.create_card(parent, "输出")
 
         path_frame = ttk.Frame(card, style="Card.TFrame")
         path_frame.pack(fill=tk.X)
@@ -372,13 +372,13 @@ class InferenceUIMixin:
         button_frame.pack(fill=tk.X, pady=(15, 0))
 
         self.convert_btn = ttk.Button(
-            button_frame, text="\u25b6 Start Conversion",
+            button_frame, text="\u25b6 开始转换",
             style="Primary.TButton", command=self._start_conversion
         )
         self.convert_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         self.stop_btn = ttk.Button(
-            button_frame, text="\u23f9 Stop",
+            button_frame, text="\u23f9 停止",
             style="Danger.TButton", command=self._stop_conversion,
             state=tk.DISABLED
         )
@@ -388,7 +388,7 @@ class InferenceUIMixin:
 
     def _create_progress_section(self, parent: tk.Widget):
         """Create multi-stage progress display."""
-        card = self.create_card(parent, "Conversion Progress")
+        card = self.create_card(parent, "转换进度")
 
         # Stage indicator
         stage_frame = ttk.Frame(card, style="Card.TFrame")
@@ -425,7 +425,7 @@ class InferenceUIMixin:
 
     def _create_log_section(self, parent: tk.Widget):
         """Create log output section."""
-        card = self.create_card(parent, "Log Output")
+        card = self.create_card(parent, "日志输出")
 
         log_frame = ttk.Frame(card, style="Card.TFrame")
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -463,10 +463,10 @@ class InferenceUIMixin:
     def _browse_output(self):
         """Open file dialog to select output path."""
         filetypes = [
-            ("WAV files", "*.wav"),
-            ("MP3 files", "*.mp3"),
-            ("FLAC files", "*.flac"),
-            ("All files", "*.*")
+            ("WAV 文件", "*.wav"),
+            ("MP3 文件", "*.mp3"),
+            ("FLAC 文件", "*.flac"),
+            ("所有文件", "*.*")
         ]
 
         filename = filedialog.asksaveasfilename(
@@ -521,9 +521,9 @@ class InferenceUIMixin:
 
                 self.safe_after(0, lambda: self.file_info_duration.set(f"{minutes}:{seconds:02d}"))
                 self.safe_after(0, lambda: self.file_info_samplerate.set(f"{info.samplerate} Hz"))
-                ch_map = {1: "Mono", 2: "Stereo"}
+                ch_map = {1: "单声道", 2: "立体声"}
                 self.safe_after(0, lambda: self.file_info_channels.set(
-                    ch_map.get(info.channels, f"{info.channels} ch")
+                    ch_map.get(info.channels, f"{info.channels} 声道")
                 ))
             except Exception:
                 self.safe_after(0, lambda: self.file_info_duration.set("N/A"))
@@ -577,12 +577,12 @@ class InferenceUIMixin:
             self._model_cache_time = now
 
         if not models:
-            models = ["No models available"]
+            models = ["暂无可用模型"]
 
         self._available_models = models
         self._model_combo.configure(values=self._available_models)
 
-        if self._available_models and self._available_models[0] != "No models available":
+        if self._available_models and self._available_models[0] != "暂无可用模型":
             self._model_combo.set(self._available_models[0])
 
     def _find_model_file(self, model_name: str) -> Optional[str]:

@@ -89,7 +89,7 @@ class SeparationUIMixin:
 
     def _create_dropzone_section(self, parent: tk.Widget):
         """Create a visual drop zone for audio files."""
-        card = self.create_card(parent, "Source Audio")
+        card = self.create_card(parent, "源音频")
 
         # Drop zone frame with dashed border effect
         self.dropzone = tk.Frame(
@@ -149,17 +149,17 @@ class SeparationUIMixin:
 
     def _create_file_info_section(self, parent: tk.Widget):
         """Create file information display section."""
-        card = self.create_card(parent, "File Info")
+        card = self.create_card(parent, "文件信息")
 
         info_frame = ttk.Frame(card, style="Card.TFrame")
         info_frame.pack(fill=tk.X)
 
         info_items = [
-            ("File", self.file_info_filename),
-            ("Duration", self.file_info_duration),
-            ("Sample Rate", self.file_info_samplerate),
-            ("Channels", self.file_info_channels),
-            ("File Size", self.file_info_filesize),
+            ("文件名", self.file_info_filename),
+            ("时长", self.file_info_duration),
+            ("采样率", self.file_info_samplerate),
+            ("声道", self.file_info_channels),
+            ("文件大小", self.file_info_filesize),
         ]
 
         for label_text, var in info_items:
@@ -172,7 +172,7 @@ class SeparationUIMixin:
 
     def _create_mode_section(self, parent: tk.Widget):
         """Create separation mode and backend selection section."""
-        card = self.create_card(parent, "Separation Settings")
+        card = self.create_card(parent, "分离设置")
 
         # Mode selection
         mode_frame = ttk.Frame(card, style="Card.TFrame")
@@ -227,7 +227,7 @@ class SeparationUIMixin:
 
     def _create_output_section(self, parent: tk.Widget):
         """Create output directory selection section."""
-        card = self.create_card(parent, "Output Directory")
+        card = self.create_card(parent, "输出目录")
 
         path_frame = ttk.Frame(card, style="Card.TFrame")
         path_frame.pack(fill=tk.X)
@@ -274,7 +274,7 @@ class SeparationUIMixin:
 
     def _create_progress_section(self, parent: tk.Widget):
         """Create progress display section with elapsed time."""
-        card = self.create_card(parent, "Progress")
+        card = self.create_card(parent, "进度")
 
         # Progress bar
         self.progress_bar = ttk.Progressbar(
@@ -303,7 +303,7 @@ class SeparationUIMixin:
 
     def _create_log_section(self, parent: tk.Widget):
         """Create log output section."""
-        card = self.create_card(parent, "Log Output")
+        card = self.create_card(parent, "日志输出")
 
         log_frame = ttk.Frame(card, style="Card.TFrame")
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -323,7 +323,7 @@ class SeparationUIMixin:
 
     def _create_output_files_section(self, parent: tk.Widget):
         """Create output files list section."""
-        card = self.create_card(parent, "Output Files")
+        card = self.create_card(parent, "输出文件")
 
         self.output_listbox = tk.Listbox(
             card, height=5,
@@ -419,7 +419,7 @@ class SeparationUIMixin:
 
                 self.safe_after(0, lambda: self.file_info_duration.set(duration_str))
                 self.safe_after(0, lambda: self.file_info_samplerate.set(f"{info.samplerate} Hz"))
-                ch_map = {1: "Mono", 2: "Stereo"}
+                ch_map = {1: "单声道", 2: "立体声"}
                 self.safe_after(0, lambda: self.file_info_channels.set(
                     ch_map.get(info.channels, f"{info.channels} ch")
                 ))

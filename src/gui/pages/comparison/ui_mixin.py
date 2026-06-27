@@ -257,7 +257,7 @@ class ComparisonUIMixin:
         # Output directory
         outdir_frame = ttk.Frame(card, style="Card.TFrame")
         outdir_frame.pack(fill=tk.X, pady=(10, 0))
-        ttk.Label(outdir_frame, text="Output Dir:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(outdir_frame, text="输出目录:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         outdir_entry = ttk.Entry(outdir_frame, textvariable=self.output_dir)
         outdir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5))
         outdir_btn = ttk.Button(
@@ -277,18 +277,18 @@ class ComparisonUIMixin:
 
     def _create_action_section(self, parent: tk.Widget):
         """Create action buttons section."""
-        card = self.create_card(parent, "Actions")
+        card = self.create_card(parent, "操作")
 
         # Add task button
         add_btn = ttk.Button(
-            card, text="\u2795 Add Task",
+            card, text="\u2795 添加任务",
             style="Primary.TButton", command=self._add_task
         )
         add_btn.pack(fill=tk.X, pady=(0, 5))
 
         # Duplicate last task
         dup_btn = ttk.Button(
-            card, text="\U0001f4cb Duplicate Last Config",
+            card, text="\U0001f4cb 复制上次配置",
             style="Secondary.TButton", command=self._duplicate_last_task
         )
         dup_btn.pack(fill=tk.X, pady=(0, 5))
@@ -298,13 +298,13 @@ class ComparisonUIMixin:
         batch_frame.pack(fill=tk.X, pady=(5, 0))
 
         start_all_btn = ttk.Button(
-            batch_frame, text="\u25b6 Start All",
+            batch_frame, text="\u25b6 全部开始",
             style="Primary.TButton", command=self._start_all_tasks
         )
         start_all_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
 
         cancel_all_btn = ttk.Button(
-            batch_frame, text="\u23f9 Cancel All",
+            batch_frame, text="\u23f9 全部取消",
             style="Danger.TButton", command=self._cancel_all_tasks
         )
         cancel_all_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
@@ -345,7 +345,7 @@ class ComparisonUIMixin:
 
     def _create_task_list_section(self, parent: tk.Widget):
         """Create task list section with Treeview."""
-        card = self.create_card(parent, "Task Queue")
+        card = self.create_card(parent, "任务队列")
 
         # Treeview for task list
         tree_frame = ttk.Frame(card, style="Card.TFrame")
@@ -370,7 +370,7 @@ class ComparisonUIMixin:
 
         # Task count label
         self.task_count_label = ttk.Label(
-            card, text="0 tasks", style="Muted.TLabel"
+            card, text="0 个任务", style="Muted.TLabel"
         )
         self.task_count_label.pack(anchor=tk.W, pady=(5, 0))
 
@@ -378,13 +378,13 @@ class ComparisonUIMixin:
 
     def _create_playback_section(self, parent: tk.Widget):
         """Create A/B playback controls section."""
-        card = self.create_card(parent, "Playback (A/B Compare)")
+        card = self.create_card(parent, "播放对比 (A/B)")
 
         # A/B selection info
         ab_frame = ttk.Frame(card, style="Card.TFrame")
         ab_frame.pack(fill=tk.X, pady=(0, 10))
 
-        ttk.Label(ab_frame, text="Select 1-2 completed tasks for A/B comparison", style="Muted.TLabel").pack(
+        ttk.Label(ab_frame, text="选择1-2个已完成任务进行A/B对比", style="Muted.TLabel").pack(
             anchor=tk.W
         )
 
@@ -393,25 +393,25 @@ class ComparisonUIMixin:
         play_frame.pack(fill=tk.X, pady=(0, 10))
 
         play_a_btn = ttk.Button(
-            play_frame, text="\u25b6 Play A",
+            play_frame, text="\u25b6 播放 A",
             style="Primary.TButton", command=self._play_selected_a
         )
         play_a_btn.pack(side=tk.LEFT, padx=(0, 5))
 
         play_b_btn = ttk.Button(
-            play_frame, text="\u25b6 Play B",
+            play_frame, text="\u25b6 播放 B",
             style="Primary.TButton", command=self._play_selected_b
         )
         play_b_btn.pack(side=tk.LEFT, padx=(0, 5))
 
         stop_btn = ttk.Button(
-            play_frame, text="\u23f9 Stop",
+            play_frame, text="\u23f9 停止",
             style="Danger.TButton", command=self._stop_playback
         )
         stop_btn.pack(side=tk.LEFT, padx=(0, 5))
 
         ab_btn = ttk.Button(
-            play_frame, text="\U0001f504 A/B Switch",
+            play_frame, text="\U0001f504 A/B 切换",
             style="Secondary.TButton", command=self._ab_switch_play
         )
         ab_btn.pack(side=tk.LEFT)
@@ -419,7 +419,7 @@ class ComparisonUIMixin:
         # Volume control
         vol_frame = ttk.Frame(card, style="Card.TFrame")
         vol_frame.pack(fill=tk.X)
-        ttk.Label(vol_frame, text="Volume:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(vol_frame, text="音量:", style="Card.TLabel").pack(side=tk.LEFT)
         self.volume_var = tk.DoubleVar(value=0.8)
         vol_scale = ttk.Scale(
             vol_frame, from_=0.0, to=1.0,
@@ -456,7 +456,7 @@ class ComparisonUIMixin:
         # Elapsed time
         time_frame = ttk.Frame(card, style="Card.TFrame")
         time_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(time_frame, text="Elapsed:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(time_frame, text="耗时:", style="Card.TLabel").pack(side=tk.LEFT)
         ttk.Label(time_frame, textvariable=self.elapsed_var, style="Card.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
@@ -466,13 +466,13 @@ class ComparisonUIMixin:
         export_frame.pack(fill=tk.X)
 
         export_all_btn = ttk.Button(
-            export_frame, text="\U0001f4e6 Export All Results",
+            export_frame, text="\U0001f4e6 导出全部结果",
             style="Primary.TButton", command=self._export_all_results
         )
         export_all_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         open_folder_btn = ttk.Button(
-            export_frame, text="\U0001f4c1 Open Folder",
+            export_frame, text="\U0001f4c1 打开文件夹",
             style="Secondary.TButton", command=self._open_output_folder
         )
         open_folder_btn.pack(side=tk.LEFT)
@@ -482,7 +482,7 @@ class ComparisonUIMixin:
     def _browse_source(self):
         """Browse for source audio file."""
         filename = filedialog.askopenfilename(
-            title="Select Source Audio",
+            title="选择源音频",
             filetypes=AUDIO_FILETYPES,
             initialdir=self._last_directory,
         )
@@ -497,7 +497,7 @@ class ComparisonUIMixin:
     def _browse_output_dir(self):
         """Browse for output directory."""
         dirname = filedialog.askdirectory(
-            title="Select Output Directory",
+            title="选择输出目录",
             initialdir=self._last_directory,
         )
         if dirname:
@@ -573,7 +573,7 @@ class ComparisonUIMixin:
             self._model_cache_time = now
 
         if not models:
-            models = ["No models available"]
+            models = ["暂无可用模型"]
 
         # Update all model comboboxes in the config section
         for widget in self._find_comboboxes():

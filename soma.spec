@@ -374,7 +374,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,  # TODO: Add icon when available: icon='assets/icon.ico'
-    version='version_info.txt',  # Windows version info
 )
 
 # ============================================================================

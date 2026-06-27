@@ -23,11 +23,11 @@ STATUS_CANCELLED = "cancelled"
 
 # Status display mapping (with icons)
 STATUS_DISPLAY = {
-    STATUS_QUEUED: "\u23f3 Queued",
-    STATUS_RUNNING: "\u2699 Running...",
-    STATUS_DONE: "\u2705 Done",
-    STATUS_FAILED: "\u274c Failed",
-    STATUS_CANCELLED: "\u23f9 Cancelled",
+    STATUS_QUEUED: "\u23f3 排队中",
+    STATUS_RUNNING: "\u2699 运行中...",
+    STATUS_DONE: "\u2705 已完成",
+    STATUS_FAILED: "\u274c 失败",
+    STATUS_CANCELLED: "\u23f9 已取消",
 }
 
 # UI status text constants (fix #5)
@@ -38,8 +38,8 @@ STATUS_LOADING_AUDIO = "正在加载音频..."
 STATUS_PROCESSING = "正在处理..."
 STATUS_SAVING = "正在保存..."
 STATUS_COMPLETED = "已完成"
-STATUS_ERROR = "Error"
-STATUS_CANCELLED_UI = "Cancelled"
+STATUS_ERROR = "错误"
+STATUS_CANCELLED_UI = "已取消"
 
 
 # ── Task TypedDict (fix #3: type safety for task dicts) ────────────────
@@ -82,13 +82,13 @@ SETTING_KEY_DEVICE_TYPE = "comparison_device_type"
 
 # Feature extractors: name -> description
 FEATURE_EXTRACTORS = {
-    "hubert": "HuBERT Base (default, good quality)",
-    "contentvec": "ContentVec (alternative features)",
+    "hubert": "HuBERT Base (默认，质量良好)",
+    "contentvec": "ContentVec (备选特征提取器)",
 }
 
 # F0 extraction methods: name -> description
 F0_METHODS = {
-    "dio": "DIO (fast, default)",
+    "dio": "DIO (快速，默认)",
     "harvest": "Harvest (音质更好，速度较慢)",
     "rmvpe": "RMVPE (深度学习，最佳音质)",
     "crepe": "Crepe (神经网络，高质量)",
@@ -96,8 +96,8 @@ F0_METHODS = {
 
 # Device options: name -> description
 DEVICES = {
-    "auto": "Auto-detect (GPU if available)",
-    "cpu": "CPU (always available)",
+    "auto": "自动检测 (优先使用 GPU)",
+    "cpu": "CPU (始终可用)",
     "cuda": "CUDA (NVIDIA GPU)",
 }
 
@@ -136,8 +136,8 @@ AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac"}
 # Audio file dialog filter patterns
 AUDIO_FILETYPES = [
     ("音频文件", "*.wav *.mp3 *.flac *.ogg *.m4a *.aac"),
-    ("WAV files", "*.wav"),
-    ("MP3 files", "*.mp3"),
-    ("FLAC files", "*.flac"),
+    ("WAV 文件", "*.wav"),
+    ("MP3 文件", "*.mp3"),
+    ("FLAC 文件", "*.flac"),
     ("所有文件", "*.*"),
 ]
