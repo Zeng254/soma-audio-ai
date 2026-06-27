@@ -52,6 +52,11 @@ class InferencePage(BasePage):
         self.progress_var = tk.DoubleVar(value=0)
         self.status_var = tk.StringVar(value="Ready")
         
+        # Preprocessing options
+        self.separate_vocals = tk.BooleanVar(value=True)  # Default: separate vocals first
+        self.dereverb_audio = tk.BooleanVar(value=False)
+        self.separation_mode = tk.StringVar(value="2-stem")
+        
         # Available models (would be populated from actual model storage)
         self._available_models: List[str] = []
     
@@ -175,6 +180,54 @@ class InferencePage(BasePage):
         
         # Bind quality change
         self.quality.trace_add("write", lambda *args: self._update_quality_desc())
+        
+        # Separator
+        ttk.Separator(card, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=15)
+        
+        # Preprocessing options header
+        ttk.Label(card, text="Audio Preprocessing", style="Card.TLabel",
+                 font=(Fonts.FAMILY, Fonts.SIZE_BODY, "bold")).pack(anchor=tk.W, pady=(0, 10))
+        
+        # Separate vocals checkbox
+        separate_frame = ttk.Frame(card, style="Card.TFrame")
+        separate_frame.pack(fill=tk.X, pady=5)
+        
+        separate_check = ttk.Checkbutton(
+            separate_frame,
+            text="Separate vocals first (recommended for songs with instruments)",
+            variable=self.separate_vocals
+        )
+        separate_check.pack(side=tk.LEFT)
+        
+        # Dereverb checkbox
+        dereverb_frame = ttk.Frame(card, style="Card.TFrame")
+        dereverb_frame.pack(fill=tk.X, pady=5)
+        
+        dereverb_check = ttk.Checkbutton(
+            dereverb_frame,
+            text="Remove reverb (improves voice conversion quality)",
+            variable=self.dereverb_audio
+        )
+        dereverb_check.pack(side=tk.LEFT)
+        
+        # Separation mode
+        sep_mode_frame = ttk.Frame(card, style="Card.TFrame")
+        sep_mode_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(sep_mode_frame, text="Separation:", style="Card.TLabel",
+                 width=15).pack(side=tk.LEFT)
+        
+        sep_mode_combo = ttk.Combobox(
+            sep_mode_frame,
+            textvariable=self.separation_mode,
+            values=["2-stem", "4-stem"],
+            state="readonly",
+            width=15
+        )
+        sep_mode_combo.pack(side=tk.LEFT)
+        
+        ttk.Label(sep_mode_frame, text="(vocals + accompaniment)",
+                 style="Muted.TLabel").pack(side=tk.LEFT, padx=(10, 0))
         
         # Convert button
         button_frame = ttk.Frame(card, style="Card.TFrame")
