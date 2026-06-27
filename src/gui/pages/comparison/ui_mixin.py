@@ -50,8 +50,8 @@ from gui.utils import (
 # Column definitions for task list
 COLUMNS = ("id", "model", "pitch", "f0", "feature", "status", "time")
 COLUMN_HEADINGS = {
-    "id": "ID", "model": "Model", "pitch": "Pitch",
-    "f0": "F0", "feature": "Feature", "status": "Status", "time": "Time",
+    "id": "序号", "model": "模型", "pitch": "音调",
+    "f0": "F0", "feature": "特征", "status": "状态", "time": "耗时",
 }
 COLUMN_WIDTHS = {
     "id": 40, "model": 120, "pitch": 50,
@@ -73,8 +73,8 @@ class ComparisonUIMixin:
         # Title section
         self.create_title_section(
             self.content_frame,
-            "Effect Comparison",
-            "Compare voice conversion results with different parameters"
+            "效果对比",
+            "使用不同参数对比声音转换结果"
         )
 
         # Main content: left (config) + right (tasks + results)
@@ -104,7 +104,7 @@ class ComparisonUIMixin:
 
     def _create_dropzone_section(self, parent: tk.Widget):
         """Create a visual drop zone for source audio files."""
-        card = self.create_card(parent, "Source Audio")
+        card = self.create_card(parent, "源音频")
 
         # Drop zone visual
         self.dropzone = tk.Frame(
@@ -121,7 +121,7 @@ class ComparisonUIMixin:
 
         tk.Label(
             self.dropzone,
-            text="Click 'Browse' or drag audio file here",
+            text="点击[浏览]或拖入音频文件",
             font=(Fonts.FAMILY, Fonts.SIZE_SMALL),
             bg=Colors.BG_INPUT, fg=Colors.TEXT_SECONDARY,
         ).pack(pady=(0, 5))
@@ -134,7 +134,7 @@ class ComparisonUIMixin:
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
         browse_btn = ttk.Button(
-            path_frame, text="Browse...",
+            path_frame, text="浏览...",
             style="Secondary.TButton", command=self._browse_source
         )
         browse_btn.pack(side=tk.RIGHT)
@@ -146,17 +146,17 @@ class ComparisonUIMixin:
 
     def _create_file_info_section(self, parent: tk.Widget):
         """Create file information display section."""
-        card = self.create_card(parent, "File Info")
+        card = self.create_card(parent, "文件信息")
 
         info_frame = ttk.Frame(card, style="Card.TFrame")
         info_frame.pack(fill=tk.X)
 
         info_items = [
-            ("File", self.file_info_filename),
-            ("Duration", self.file_info_duration),
-            ("Sample Rate", self.file_info_samplerate),
-            ("Channels", self.file_info_channels),
-            ("File Size", self.file_info_filesize),
+            ("文件名", self.file_info_filename),
+            ("时长", self.file_info_duration),
+            ("采样率", self.file_info_samplerate),
+            ("声道", self.file_info_channels),
+            ("文件大小", self.file_info_filesize),
         ]
 
         for label_text, var in info_items:
@@ -169,12 +169,12 @@ class ComparisonUIMixin:
 
     def _create_task_config_section(self, parent: tk.Widget):
         """Create task parameter configuration section."""
-        card = self.create_card(parent, "Task Configuration")
+        card = self.create_card(parent, "任务配置")
 
         # Model selection
         model_frame = ttk.Frame(card, style="Card.TFrame")
         model_frame.pack(fill=tk.X, pady=3)
-        ttk.Label(model_frame, text="Model:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(model_frame, text="模型:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         model_combo = ttk.Combobox(
             model_frame, textvariable=self.selected_model, state="readonly"
         )
@@ -188,7 +188,7 @@ class ComparisonUIMixin:
         # Pitch shift
         pitch_frame = ttk.Frame(card, style="Card.TFrame")
         pitch_frame.pack(fill=tk.X, pady=3)
-        ttk.Label(pitch_frame, text="Pitch:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(pitch_frame, text="音调:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         pitch_spinbox = tk.Spinbox(
             pitch_frame, from_=PITCH_MIN, to=PITCH_MAX,
             textvariable=self.pitch_shift,
@@ -197,14 +197,14 @@ class ComparisonUIMixin:
             buttonbackground=Colors.BG_TERTIARY, width=5
         )
         pitch_spinbox.pack(side=tk.LEFT)
-        ttk.Label(pitch_frame, text="semitones", style="Muted.TLabel").pack(
+        ttk.Label(pitch_frame, text="半音", style="Muted.TLabel").pack(
             side=tk.LEFT, padx=(5, 0)
         )
 
         # Feature extractor
         fe_frame = ttk.Frame(card, style="Card.TFrame")
         fe_frame.pack(fill=tk.X, pady=3)
-        ttk.Label(fe_frame, text="Feature:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(fe_frame, text="特征:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         fe_combo = ttk.Combobox(
             fe_frame, textvariable=self.feature_extractor,
             values=list(self.FEATURE_EXTRACTORS.keys()), state="readonly", width=12
@@ -214,7 +214,7 @@ class ComparisonUIMixin:
         # F0 method
         f0_frame = ttk.Frame(card, style="Card.TFrame")
         f0_frame.pack(fill=tk.X, pady=3)
-        ttk.Label(f0_frame, text="F0 Method:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(f0_frame, text="F0方法:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         f0_combo = ttk.Combobox(
             f0_frame, textvariable=self.f0_method,
             values=list(self.F0_METHODS.keys()), state="readonly", width=12
@@ -224,7 +224,7 @@ class ComparisonUIMixin:
         # Device
         dev_frame = ttk.Frame(card, style="Card.TFrame")
         dev_frame.pack(fill=tk.X, pady=3)
-        ttk.Label(dev_frame, text="Device:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(dev_frame, text="设备:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         dev_combo = ttk.Combobox(
             dev_frame, textvariable=self.device,
             values=list(self.DEVICES.keys()), state="readonly", width=12
@@ -234,7 +234,7 @@ class ComparisonUIMixin:
         # Sample rate
         sr_frame = ttk.Frame(card, style="Card.TFrame")
         sr_frame.pack(fill=tk.X, pady=3)
-        ttk.Label(sr_frame, text="Sample Rate:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(sr_frame, text="采样率:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         sr_combo = ttk.Combobox(
             sr_frame, textvariable=self.output_sample_rate,
             values=self.SAMPLE_RATES, state="readonly", width=12
@@ -244,7 +244,7 @@ class ComparisonUIMixin:
         # Cluster ratio
         cluster_frame = ttk.Frame(card, style="Card.TFrame")
         cluster_frame.pack(fill=tk.X, pady=3)
-        ttk.Label(cluster_frame, text="Cluster:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
+        ttk.Label(cluster_frame, text="聚类:", style="Card.TLabel", width=10).pack(side=tk.LEFT)
         cluster_scale = ttk.Scale(
             cluster_frame, from_=0.0, to=1.0,
             variable=self.cluster_ratio, orient=tk.HORIZONTAL
@@ -314,13 +314,13 @@ class ComparisonUIMixin:
         clear_frame.pack(fill=tk.X, pady=(5, 0))
 
         clear_done_btn = ttk.Button(
-            clear_frame, text="Clear Done",
+            clear_frame, text="清除已完成",
             style="Secondary.TButton", command=self._clear_done_tasks
         )
         clear_done_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
 
         remove_btn = ttk.Button(
-            clear_frame, text="Remove Selected",
+            clear_frame, text="删除选中",
             style="Secondary.TButton", command=self._remove_selected_task
         )
         remove_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
@@ -330,13 +330,13 @@ class ComparisonUIMixin:
         config_frame.pack(fill=tk.X, pady=(10, 0))
 
         save_cfg_btn = ttk.Button(
-            config_frame, text="Save Config",
+            config_frame, text="保存配置",
             style="Secondary.TButton", command=self._save_config
         )
         save_cfg_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 3))
 
         load_cfg_btn = ttk.Button(
-            config_frame, text="Load Config",
+            config_frame, text="加载配置",
             style="Secondary.TButton", command=self._load_config
         )
         load_cfg_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(3, 0))
@@ -431,7 +431,7 @@ class ComparisonUIMixin:
 
     def _create_result_log_section(self, parent: tk.Widget):
         """Create result log section."""
-        card = self.create_card(parent, "Result Log")
+        card = self.create_card(parent, "结果日志")
 
         log_frame = ttk.Frame(card, style="Card.TFrame")
         log_frame.pack(fill=tk.BOTH, expand=True)
@@ -451,7 +451,7 @@ class ComparisonUIMixin:
 
     def _create_export_section(self, parent: tk.Widget):
         """Create export section."""
-        card = self.create_card(parent, "Export Results")
+        card = self.create_card(parent, "导出结果")
 
         # Elapsed time
         time_frame = ttk.Frame(card, style="Card.TFrame")
@@ -517,7 +517,7 @@ class ComparisonUIMixin:
 
     def _reset_file_info(self):
         """Reset file info to defaults."""
-        self.file_info_filename.set("No file selected")
+        self.file_info_filename.set("未选择文件")
         self.file_info_duration.set("--")
         self.file_info_samplerate.set("--")
         self.file_info_channels.set("--")

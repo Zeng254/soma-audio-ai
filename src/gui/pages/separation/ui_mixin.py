@@ -114,7 +114,7 @@ class SeparationUIMixin:
 
         hint_label = tk.Label(
             self.dropzone,
-            text="Click 'Browse' or drag audio file here",
+            text="点击[浏览]或拖入音频文件",
             font=(Fonts.FAMILY, Fonts.SIZE_BODY),
             bg=Colors.BG_INPUT,
             fg=Colors.TEXT_SECONDARY,
@@ -129,7 +129,7 @@ class SeparationUIMixin:
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
         browse_btn = ttk.Button(
-            path_frame, text="Browse...",
+            path_frame, text="浏览...",
             style="Secondary.TButton",
             command=self._browse_source
         )
@@ -138,7 +138,7 @@ class SeparationUIMixin:
         # Help text
         ttk.Label(
             card,
-            text="Supported formats: WAV, MP3, FLAC, OGG",
+            text="支持格式: WAV, MP3, FLAC, OGG",
             style="Muted.TLabel"
         ).pack(anchor=tk.W, pady=(10, 0))
 
@@ -177,7 +177,7 @@ class SeparationUIMixin:
         # Mode selection
         mode_frame = ttk.Frame(card, style="Card.TFrame")
         mode_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(mode_frame, text="Mode:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
+        ttk.Label(mode_frame, text="模式:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
         mode_combo = ttk.Combobox(
             mode_frame, textvariable=self.separation_mode,
             values=list(self.MODES.keys()), state="readonly"
@@ -187,7 +187,7 @@ class SeparationUIMixin:
         # Backend selection
         backend_frame = ttk.Frame(card, style="Card.TFrame")
         backend_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(backend_frame, text="Backend:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
+        ttk.Label(backend_frame, text="后端:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
         backend_combo = ttk.Combobox(
             backend_frame, textvariable=self.backend,
             values=list(self.BACKENDS.keys()), state="readonly"
@@ -208,7 +208,7 @@ class SeparationUIMixin:
         dereverb_frame.pack(fill=tk.X, pady=5)
         dereverb_check = ttk.Checkbutton(
             dereverb_frame,
-            text="Enable Dereverberation (reduce room echo)",
+            text="启用去混响 (减少房间回声)",
             variable=self.dereverb_enabled,
         )
         dereverb_check.pack(side=tk.LEFT)
@@ -216,7 +216,7 @@ class SeparationUIMixin:
         # Output format
         fmt_frame = ttk.Frame(card, style="Card.TFrame")
         fmt_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(fmt_frame, text="Output Format:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
+        ttk.Label(fmt_frame, text="输出格式:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
         fmt_combo = ttk.Combobox(
             fmt_frame, textvariable=self.output_format,
             values=list(self.OUTPUT_FORMATS.keys()), state="readonly", width=10
@@ -236,7 +236,7 @@ class SeparationUIMixin:
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
         browse_btn = ttk.Button(
-            path_frame, text="Browse...",
+            path_frame, text="浏览...",
             style="Secondary.TButton",
             command=self._browse_output_dir
         )
@@ -244,7 +244,7 @@ class SeparationUIMixin:
 
         ttk.Label(
             card,
-            text="Output files are auto-named: <source>_<stem>.<format>",
+            text="输出文件自动命名: <源文件名>_<类型>.<格式>",
             style="Muted.TLabel"
         ).pack(anchor=tk.W, pady=(10, 0))
 
@@ -286,7 +286,7 @@ class SeparationUIMixin:
         # Status row
         status_frame = ttk.Frame(card, style="Card.TFrame")
         status_frame.pack(fill=tk.X)
-        ttk.Label(status_frame, text="Status:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(status_frame, text="状态:", style="Card.TLabel").pack(side=tk.LEFT)
         ttk.Label(status_frame, textvariable=self.status_var, style="Card.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
@@ -294,7 +294,7 @@ class SeparationUIMixin:
         # Elapsed time row
         time_frame = ttk.Frame(card, style="Card.TFrame")
         time_frame.pack(fill=tk.X, pady=(5, 0))
-        ttk.Label(time_frame, text="Elapsed:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(time_frame, text="耗时:", style="Card.TLabel").pack(side=tk.LEFT)
         ttk.Label(time_frame, textvariable=self.elapsed_var, style="Card.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
@@ -388,7 +388,7 @@ class SeparationUIMixin:
 
     def _reset_file_info(self):
         """Reset file info to defaults."""
-        self.file_info_filename.set("No file selected")
+        self.file_info_filename.set("未选择文件")
         self.file_info_duration.set("--")
         self.file_info_samplerate.set("--")
         self.file_info_channels.set("--")

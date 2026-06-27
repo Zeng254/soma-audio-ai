@@ -19,6 +19,13 @@ import sys
 import os
 from pathlib import Path
 
+# Try to import PyInstaller hooks for torch
+try:
+    from PyInstaller.utils.hooks import collect_all, collect_submodules
+    HAS_HOOKS = True
+except ImportError:
+    HAS_HOOKS = False
+
 block_cipher = None
 
 # ============================================================================
@@ -70,6 +77,9 @@ hiddenimports = [
     'torch.optim',
     'torch.utils',
     'torch.utils.data',
+    'torch._C',
+    'torch.cuda',
+    'torch.cpu',
     'torchaudio',
 
     # --- SOMA Core Modules ---
@@ -280,15 +290,36 @@ excludes = [
 # Analysis
 # ============================================================================
 
+# Collect torch binaries and data files (needed for proper torch detection)
+torch_datas = []
+torch_binaries = []
+torch_hiddenimports = []
+
+try:
+    # Use PyInstaller's collect_all to get all torch components
+    torch_datas, torch_binaries, torch_hiddenimports = collect_all('torch')
+    print(f"[SOMA] Collected torch: {len(torch_datas)} datas, {len(torch_binaries)} binaries, {len(torch_hiddenimports)} imports")
+except Exception as e:
+    print(f"[SOMA] Warning: Could not collect torch: {e}")
+    # Fallback: add basic torch submodules
+    torch_hiddenimports = [
+        'torch._C',
+        'torch.cpu',
+        'torch.cuda',
+    ]
+
+# Combine all hidden imports
+all_hiddenimports = hiddenimports + torch_hiddenimports
+
 a = Analysis(
     ['launcher.py'],
     pathex=[
         str(project_root),
         str(src_dir),
     ],
-    binaries=[],
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=torch_binaries,
+    datas=datas + torch_datas,
+    hiddenimports=all_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

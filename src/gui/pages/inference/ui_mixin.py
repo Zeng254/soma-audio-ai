@@ -125,7 +125,7 @@ class InferenceUIMixin:
 
         tk.Label(
             self.dropzone,
-            text="Click 'Browse' or drag dry vocal file here",
+            text="点击[浏览]或拖入干声文件",
             font=(Fonts.FAMILY, Fonts.SIZE_BODY),
             bg=Colors.BG_INPUT, fg=Colors.TEXT_SECONDARY,
         ).pack(pady=(0, 5))
@@ -138,13 +138,13 @@ class InferenceUIMixin:
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
 
         browse_btn = ttk.Button(
-            path_frame, text="Browse...",
+            path_frame, text="浏览...",
             style="Secondary.TButton", command=self._browse_source
         )
         browse_btn.pack(side=tk.RIGHT)
 
         ttk.Label(
-            card, text="Supported: WAV, MP3, FLAC, OGG",
+            card, text="支持格式: WAV, MP3, FLAC, OGG",
             style="Muted.TLabel"
         ).pack(anchor=tk.W, pady=(10, 0))
 
@@ -183,7 +183,7 @@ class InferenceUIMixin:
         model_frame = ttk.Frame(card, style="Card.TFrame")
         model_frame.pack(fill=tk.X)
 
-        ttk.Label(model_frame, text="Model:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(model_frame, text="模型:", style="Card.TLabel").pack(side=tk.LEFT)
 
         self._model_combo = ttk.Combobox(
             model_frame, textvariable=self.selected_model, state="readonly"
@@ -207,7 +207,7 @@ class InferenceUIMixin:
         # Pitch shift
         pitch_frame = ttk.Frame(card, style="Card.TFrame")
         pitch_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(pitch_frame, text="Pitch Shift:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
+        ttk.Label(pitch_frame, text="音调调整:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
 
         pitch_spinbox = tk.Spinbox(
             pitch_frame, from_=PITCH_MIN, to=PITCH_MAX,
@@ -224,13 +224,13 @@ class InferenceUIMixin:
         # Output sample rate
         sr_frame = ttk.Frame(card, style="Card.TFrame")
         sr_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(sr_frame, text="Sample Rate:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
+        ttk.Label(sr_frame, text="采样率:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
         sr_combo = ttk.Combobox(
             sr_frame, textvariable=self.output_sample_rate,
             values=self.SAMPLE_RATES, state="readonly", width=10
         )
         sr_combo.pack(side=tk.LEFT)
-        ttk.Label(sr_frame, text="Hz (output)", style="Muted.TLabel").pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Label(sr_frame, text="Hz (输出)", style="Muted.TLabel").pack(side=tk.LEFT, padx=(10, 0))
 
     # ── Advanced Options ───────────────────────────────────────────────
 
@@ -241,7 +241,7 @@ class InferenceUIMixin:
         # Feature extractor
         fe_frame = ttk.Frame(card, style="Card.TFrame")
         fe_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(fe_frame, text="Feature Extractor:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
+        ttk.Label(fe_frame, text="特征提取器:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
         fe_combo = ttk.Combobox(
             fe_frame, textvariable=self.feature_extractor,
             values=list(self.FEATURE_EXTRACTORS.keys()), state="readonly", width=14
@@ -257,7 +257,7 @@ class InferenceUIMixin:
         # F0 method
         f0_frame = ttk.Frame(card, style="Card.TFrame")
         f0_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(f0_frame, text="F0 Method:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
+        ttk.Label(f0_frame, text="F0方法:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
         f0_combo = ttk.Combobox(
             f0_frame, textvariable=self.f0_method,
             values=list(self.F0_METHODS.keys()), state="readonly", width=14
@@ -273,7 +273,7 @@ class InferenceUIMixin:
         # Device
         dev_frame = ttk.Frame(card, style="Card.TFrame")
         dev_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(dev_frame, text="Device:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
+        ttk.Label(dev_frame, text="设备:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
         dev_combo = ttk.Combobox(
             dev_frame, textvariable=self.device,
             values=list(self.DEVICES.keys()), state="readonly", width=14
@@ -292,7 +292,7 @@ class InferenceUIMixin:
         # Clustering ratio slider
         cluster_frame = ttk.Frame(card, style="Card.TFrame")
         cluster_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(cluster_frame, text="Cluster Ratio:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
+        ttk.Label(cluster_frame, text="聚类比例:", style="Card.TLabel", width=16).pack(side=tk.LEFT)
 
         self.cluster_scale = ttk.Scale(
             cluster_frame, from_=0.0, to=1.0,
@@ -306,7 +306,7 @@ class InferenceUIMixin:
 
         ttk.Label(
             card,
-            text="Timbre clustering ratio (0 = original, 1 = fully clustered)",
+            text="音色聚类比例 (0=原音色, 1=完全聚类)",
             style="Muted.TLabel"
         ).pack(anchor=tk.W, pady=(5, 0))
 
@@ -321,7 +321,7 @@ class InferenceUIMixin:
         separate_frame.pack(fill=tk.X, pady=5)
         ttk.Checkbutton(
             separate_frame,
-            text="Separate vocals first (recommended for songs with instruments)",
+            text="先分离人声 (推荐用于有伴奏的歌曲)",
             variable=self.separate_vocals,
         ).pack(side=tk.LEFT)
 
@@ -330,14 +330,14 @@ class InferenceUIMixin:
         dereverb_frame.pack(fill=tk.X, pady=5)
         ttk.Checkbutton(
             dereverb_frame,
-            text="Remove reverb (improves voice conversion quality)",
+            text="去除混响 (提升声音转换质量)",
             variable=self.dereverb_audio,
         ).pack(side=tk.LEFT)
 
         # Separation mode (if separating)
         sep_mode_frame = ttk.Frame(card, style="Card.TFrame")
         sep_mode_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(sep_mode_frame, text="Separation:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
+        ttk.Label(sep_mode_frame, text="分离:", style="Card.TLabel", width=14).pack(side=tk.LEFT)
         sep_mode_combo = ttk.Combobox(
             sep_mode_frame, textvariable=self.separation_mode,
             values=["2-stem", "4-stem"], state="readonly", width=10
@@ -356,13 +356,13 @@ class InferenceUIMixin:
         path_frame = ttk.Frame(card, style="Card.TFrame")
         path_frame.pack(fill=tk.X)
 
-        ttk.Label(path_frame, text="Output:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(path_frame, text="输出:", style="Card.TLabel").pack(side=tk.LEFT)
 
         path_entry = ttk.Entry(path_frame, textvariable=self.output_path)
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 10))
 
         browse_btn = ttk.Button(
-            path_frame, text="Browse...",
+            path_frame, text="浏览...",
             style="Secondary.TButton", command=self._browse_output
         )
         browse_btn.pack(side=tk.RIGHT)
@@ -393,7 +393,7 @@ class InferenceUIMixin:
         # Stage indicator
         stage_frame = ttk.Frame(card, style="Card.TFrame")
         stage_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(stage_frame, text="Stage:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(stage_frame, text="阶段:", style="Card.TLabel").pack(side=tk.LEFT)
         ttk.Label(stage_frame, textvariable=self.stage_var, style="Card.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
@@ -408,7 +408,7 @@ class InferenceUIMixin:
         # Status row
         status_frame = ttk.Frame(card, style="Card.TFrame")
         status_frame.pack(fill=tk.X)
-        ttk.Label(status_frame, text="Status:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(status_frame, text="状态:", style="Card.TLabel").pack(side=tk.LEFT)
         ttk.Label(status_frame, textvariable=self.status_var, style="Card.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
@@ -416,7 +416,7 @@ class InferenceUIMixin:
         # Elapsed time row
         time_frame = ttk.Frame(card, style="Card.TFrame")
         time_frame.pack(fill=tk.X, pady=(5, 0))
-        ttk.Label(time_frame, text="Elapsed:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(time_frame, text="耗时:", style="Card.TLabel").pack(side=tk.LEFT)
         ttk.Label(time_frame, textvariable=self.elapsed_var, style="Card.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
@@ -493,7 +493,7 @@ class InferenceUIMixin:
 
     def _reset_file_info(self):
         """Reset file info to defaults."""
-        self.file_info_filename.set("No file selected")
+        self.file_info_filename.set("未选择文件")
         self.file_info_duration.set("--")
         self.file_info_samplerate.set("--")
         self.file_info_channels.set("--")

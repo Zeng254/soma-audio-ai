@@ -303,7 +303,21 @@ class TrainingPage(BasePage):
         self._log("训练已被用户停止", "warning")
     
     def _training_worker(self):
-        """后台训练工作线程（模拟）。"""
+        """后台训练工作线程（演示模式）。
+        
+        注意：当前为演示模式，每轮次仅等待0.1秒模拟训练过程。
+        实际训练需要：
+        1. 准备数据集（音频文件 + 标注）
+        2. 配置模型参数
+        3. 调用 src/training/trainer.py 中的真实训练逻辑
+        
+        真实训练时间取决于：
+        - 数据集大小
+        - 模型复杂度
+        - GPU性能
+        - 训练轮次
+        通常需要数小时到数天不等。
+        """
         epochs = self.epochs.get()
         
         for epoch in range(1, epochs + 1):
@@ -316,7 +330,7 @@ class TrainingPage(BasePage):
             if not self._is_training:
                 break
             
-            # 模拟训练工作
+            # 演示模式：模拟训练工作（实际训练需调用 trainer.py）
             threading.Event().wait(0.1)
             
             # 更新进度
@@ -348,6 +362,26 @@ class TrainingPage(BasePage):
         self.progress_var.set(100)
         self._log("训练成功完成！", "success")
         self._log(f"模型已保存为: {self.model_name.get()}", "success")
+        
+        # 显示完成弹窗
+        model_name = self.model_name.get() or "未命名模型"
+        messagebox.showinfo(
+            "训练完成",
+            f"🎉 语音克隆训练已完成！\n\n"
+            f"模型名称: {model_name}\n"
+            f"输出目录: {self._get_output_dir()}\n\n"
+            f"您可以在「模型管理」页面查看已训练的模型。"
+        )
+    
+    def _get_output_dir(self) -> str:
+        """获取输出目录。"""
+        output_dir = self.output_dir.get()
+        if output_dir:
+            return output_dir
+        # 默认输出目录
+        import os
+        default_dir = os.path.join(os.path.expanduser("~"), ".soma", "output")
+        return default_dir
     
     def _log(self, message: str, level: str = "info"):
         """向日志输出添加消息。"""
