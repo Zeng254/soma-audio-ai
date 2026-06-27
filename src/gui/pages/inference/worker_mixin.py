@@ -2,6 +2,40 @@
 Inference Worker Mixin.
 
 Contains all background processing and worker logic for the InferencePage.
+
+Required attributes (initialized in InferencePage.__init__):
+    - _cancel_event: threading.Event - cancel signal
+    - _processing_thread: Optional[threading.Thread] - background thread reference
+    - _start_time: Optional[float] - processing start timestamp
+    - _elapsed_timer_id: Optional[str] - timer ID for elapsed display
+    - source_path: tk.StringVar - source audio file path (read)
+    - output_path: tk.StringVar - output file path (read)
+    - selected_model: tk.StringVar - selected model name (read)
+    - pitch_shift: tk.IntVar - pitch shift value (read)
+    - feature_extractor: tk.StringVar - feature extractor (read)
+    - f0_method: tk.StringVar - F0 method (read)
+    - device: tk.StringVar - device selection (read)
+    - output_sample_rate: tk.StringVar - output sample rate (read)
+    - cluster_ratio: tk.DoubleVar - clustering ratio (read)
+    - separate_vocals: tk.BooleanVar - vocal separation toggle (read)
+    - dereverb_audio: tk.BooleanVar - dereverb toggle (read)
+    - progress_var: tk.DoubleVar - progress bar value (write)
+    - status_var: tk.StringVar - status text (write)
+    - elapsed_var: tk.StringVar - elapsed time display (write)
+    - stage_var: tk.StringVar - current stage display (write)
+    - _last_directory: str - remembered directory (read/write)
+    - _settings: SettingsManager - settings manager instance
+
+Methods provided by this mixin:
+    - _log(message)
+    - _set_stage(text)
+    - _start_elapsed_timer(), _tick_elapsed(), _stop_elapsed_timer()
+    - _reset_ui_after_processing()
+    - _start_conversion()
+    - _stop_conversion()
+    - _conversion_worker(...)
+    - _conversion_complete(output_path)
+    - _conversion_error(error_msg)
 """
 
 import tkinter as tk

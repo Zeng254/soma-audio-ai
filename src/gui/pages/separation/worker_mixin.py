@@ -3,6 +3,36 @@ SeparationPage Worker Mixin - background processing, state management, and compl
 
 Contains all worker thread logic, elapsed timer, logging, UI reset,
 and separation start/stop/complete/error methods.
+
+Required attributes (initialized in SeparationPage.__init__):
+    - _cancel_event: threading.Event - cancel signal
+    - _processing_thread: Optional[threading.Thread] - background thread reference
+    - _start_time: Optional[float] - processing start timestamp
+    - _elapsed_timer_id: Optional[str] - timer ID for elapsed display
+    - source_path: tk.StringVar - source audio file path (read)
+    - output_dir: tk.StringVar - output directory path (read)
+    - separation_mode: tk.StringVar - separation mode (read)
+    - backend: tk.StringVar - backend selection (read)
+    - dereverb_enabled: tk.BooleanVar - dereverb toggle (read)
+    - output_format: tk.StringVar - output format (read)
+    - progress_var: tk.DoubleVar - progress bar value (write)
+    - status_var: tk.StringVar - status text (write)
+    - elapsed_var: tk.StringVar - elapsed time display (write)
+    - _last_directory: str - remembered directory (read/write)
+    - _settings: SettingsManager - settings manager instance
+
+Methods provided by this mixin:
+    - _log(message)
+    - _start_elapsed_timer()
+    - _tick_elapsed()
+    - _stop_elapsed_timer()
+    - _reset_ui_after_processing()
+    - _start_separation()
+    - _stop_separation()
+    - _separation_worker(source_path, output_dir, mode, backend, dereverb, fmt)
+    - _separation_complete(output_path)
+    - _separation_error(error_msg)
+    - _open_output_folder()
 """
 
 import tkinter as tk

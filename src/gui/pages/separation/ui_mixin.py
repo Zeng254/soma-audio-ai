@@ -3,6 +3,37 @@ SeparationPage UI Mixin - widget creation and layout methods.
 
 Contains all _create_* section methods, browse handlers, file info display,
 and backend description updates.
+
+Required attributes (initialized in SeparationPage.__init__):
+    - source_path: tk.StringVar - source audio file path
+    - output_dir: tk.StringVar - output directory path
+    - separation_mode: tk.StringVar - separation mode selection
+    - backend: tk.StringVar - backend selection
+    - dereverb_enabled: tk.BooleanVar - dereverb toggle
+    - output_format: tk.StringVar - output format selection
+    - progress_var: tk.DoubleVar - progress bar value
+    - status_var: tk.StringVar - status text
+    - elapsed_var: tk.StringVar - elapsed time display
+    - file_info_*: tk.StringVar - file info display variables
+    - _last_directory: str - remembered directory for file dialogs
+    - _settings: SettingsManager - settings manager instance
+
+Methods provided by this mixin:
+    - _create_widgets(parent)
+    - _create_dropzone_section(parent)
+    - _create_file_info_section(parent)
+    - _create_mode_section(parent)
+    - _create_output_section(parent)
+    - _create_action_section(parent)
+    - _create_progress_section(parent)
+    - _create_log_section(parent)
+    - _create_output_files_section(parent)
+    - _browse_source()
+    - _browse_output_dir()
+    - _on_source_path_changed()
+    - _reset_file_info()
+    - _load_file_info(path)
+    - _update_backend_desc()
 """
 
 import tkinter as tk

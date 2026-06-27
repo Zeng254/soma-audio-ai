@@ -2,6 +2,34 @@
 Comparison page - UI Mixin.
 
 Contains all UI creation methods for the comparison page.
+
+Required attributes (initialized in ComparisonPage.__init__):
+    - source_path: tk.StringVar - source audio file path
+    - output_dir: tk.StringVar - output directory path
+    - selected_model: tk.StringVar - selected model name
+    - pitch_shift: tk.IntVar - pitch shift value
+    - feature_extractor: tk.StringVar - feature extractor selection
+    - f0_method: tk.StringVar - F0 extraction method
+    - device: tk.StringVar - device selection
+    - output_sample_rate: tk.StringVar - output sample rate
+    - cluster_ratio: tk.DoubleVar - clustering ratio
+    - elapsed_var: tk.StringVar - elapsed time display
+    - file_info_*: tk.StringVar - file info display variables
+    - _last_directory: str - remembered directory for file dialogs
+    - _settings: SettingsManager - settings manager instance
+    - _model_cache: list - cached model list
+    - _model_cache_time: float - cache timestamp
+
+Methods provided by this mixin:
+    - _create_widgets(parent)
+    - _create_*_section(parent) - various UI sections
+    - _browse_source(), _browse_output_dir()
+    - _on_source_path_changed()
+    - _reset_file_info(), _load_file_info(path)
+    - _refresh_models()
+    - _find_comboboxes(widget)
+    - _find_model_file(model_name)
+    - _update_cluster_label(value)
 """
 
 import tkinter as tk

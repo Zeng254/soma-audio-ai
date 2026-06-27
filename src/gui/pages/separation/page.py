@@ -3,6 +3,14 @@ SeparationPage - main page class for audio source separation.
 
 Combines SeparationUIMixin and SeparationWorkerMixin to provide
 the complete separation page functionality.
+
+MRO (Method Resolution Order):
+    SeparationPage -> BasePage -> SeparationUIMixin -> SeparationWorkerMixin -> object
+    - BasePage provides: safe_after, _widget_alive, cleanup, on_show, on_hide
+    - SeparationUIMixin provides: _create_widgets, _create_*_section, _browse_*, file info
+    - SeparationWorkerMixin provides: _start_separation, _stop_separation, _separation_worker,
+      _separation_complete, _separation_error, timer, logging
+    - No method name conflicts between mixins (verified).
 """
 
 import tkinter as tk
@@ -17,6 +25,7 @@ from .ui_mixin import SeparationUIMixin
 from .worker_mixin import SeparationWorkerMixin
 
 
+# MRO: SeparationPage -> BasePage -> SeparationUIMixin -> SeparationWorkerMixin -> object
 class SeparationPage(BasePage, SeparationUIMixin, SeparationWorkerMixin):
     """
     Separation page for audio source separation.
@@ -60,27 +69,59 @@ class SeparationPage(BasePage, SeparationUIMixin, SeparationWorkerMixin):
     }
 
     def __init__(self, parent: tk.Widget, app: Optional[object] = None):
-        """Initialize the separation page."""
+        """Initialize the separation page.
+
+        Cross-Mixin Attribute Contract:
+        ================================
+        All attributes below are shared between Mixins. Each Mixin reads/writes
+        these attributes. This section serves as the contract between Mixins.
+
+        UI Mixin reads/writes:
+            - source_path, output_dir, separation_mode, backend, dereverb_enabled,
+              output_format (Tkinter variables for UI controls)
+            - progress_var, status_var, elapsed_var (progress display)
+            - file_info_* (file info display variables)
+            - _last_directory (remembered directory for file dialogs)
+
+        Worker Mixin reads/writes:
+            - _cancel_event (cancel signal, threading.Event)
+            - _processing_thread (background thread reference)
+            - _start_time, _elapsed_timer_id (elapsed time tracking)
+            - source_path, output_dir, separation_mode, backend, dereverb_enabled,
+              output_format (read parameters for separation)
+            - progress_var, status_var, elapsed_var (update progress display)
+            - _last_directory (save directory preference)
+
+        BasePage reads/writes:
+            - _cleaned_up (idempotent cleanup flag)
+        """
         super().__init__(parent, app)
 
-        # Settings manager (singleton, thread-safe)
+        # ---- Settings manager (singleton, thread-safe) ----
         self._settings = SettingsManager()
 
-        # Cancel event (threading.Event for unified cancel mechanism)
+        # ---- Cancel event (threading.Event for unified cancel mechanism) ----
+        # Used by: WorkerMixin (set/clear), UI (check for stop button state)
         self._cancel_event = threading.Event()
 
-        # State
+        # ---- Processing state ----
+        # Used by: WorkerMixin (thread management), UI (button enable/disable)
         self._processing_thread: Optional[threading.Thread] = None
         self._start_time: Optional[float] = None
         self._elapsed_timer_id: Optional[str] = None
 
-        # Variables
+        # ---- Tkinter variables (UI <-> Worker communication) ----
+        # Source/output paths
         self.source_path = tk.StringVar()
         self.output_dir = tk.StringVar()
+
+        # Separation parameters
         self.separation_mode = tk.StringVar(value="2-stem (Vocals + Accompaniment)")
         self.backend = tk.StringVar(value="librosa")
         self.dereverb_enabled = tk.BooleanVar(value=False)
         self.output_format = tk.StringVar(value="WAV")
+
+        # Progress display
         self.progress_var = tk.DoubleVar(value=0)
         self.status_var = tk.StringVar(value="Ready")
         self.elapsed_var = tk.StringVar(value="")
@@ -92,7 +133,7 @@ class SeparationPage(BasePage, SeparationUIMixin, SeparationWorkerMixin):
         self.file_info_filesize = tk.StringVar(value="--")
         self.file_info_filename = tk.StringVar(value="No file selected")
 
-        # Remembered last directory (from SettingsManager)
+        # ---- Remembered last directory (from SettingsManager) ----
         self._last_directory = self._settings.get(
             "separation_last_dir", os.path.expanduser("~")
         )

@@ -2,6 +2,44 @@
 Comparison page - Worker Mixin.
 
 Contains all task management, execution, config save/load, and export methods.
+
+Required attributes (initialized in ComparisonPage.__init__):
+    - _tasks: list - list of ComparisonTask dicts
+    - _task_counter: int - monotonic task ID counter
+    - _tasks_lock: threading.Lock - protects _tasks list
+    - _tree_item_map: dict - task_id -> treeview iid mapping
+    - _processing: bool - whether any task is running
+    - _start_time: float - processing start timestamp
+    - _elapsed_timer_id: str - timer ID for elapsed display
+    - _executor: ThreadPoolExecutor - thread pool for parallel execution
+    - source_path: tk.StringVar - source audio file path (read)
+    - output_dir: tk.StringVar - output directory path (read)
+    - selected_model: tk.StringVar - selected model name (read)
+    - pitch_shift: tk.IntVar - pitch shift value (read)
+    - feature_extractor: tk.StringVar - feature extractor (read)
+    - f0_method: tk.StringVar - F0 method (read)
+    - device: tk.StringVar - device selection (read)
+    - output_sample_rate: tk.StringVar - output sample rate (read)
+    - cluster_ratio: tk.DoubleVar - clustering ratio (read)
+    - elapsed_var: tk.StringVar - elapsed time display (write)
+    - _last_directory: str - remembered directory (read/write)
+    - _settings: SettingsManager - settings manager instance
+
+Methods provided by this mixin:
+    - _log(message)
+    - _tick_elapsed()
+    - _get_max_workers()
+    - _get_current_config()
+    - _add_task(), _duplicate_last_task()
+    - _remove_selected_task(), _clear_done_tasks()
+    - _update_task_count(), _update_task_in_tree(task)
+    - _refresh_task_list()
+    - _start_all_tasks(), _cancel_all_tasks()
+    - _run_task(task)
+    - _check_all_done()
+    - _save_config(), _load_config()
+    - _export_all_results()
+    - _open_output_folder()
 """
 
 import tkinter as tk

@@ -2,6 +2,21 @@
 Comparison page - Playback Mixin.
 
 Contains all audio playback methods for A/B comparison.
+
+Required attributes (initialized in ComparisonPage.__init__):
+    - _current_player: subprocess.Popen - current playback process
+    - _playback_lock: threading.Lock - protects _current_player access
+    - volume_var: tk.DoubleVar - volume slider value
+    - _tasks: list - list of ComparisonTask dicts (read for completed tasks)
+    - _tasks_lock: threading.Lock - protects _tasks list (read access)
+
+Methods provided by this mixin:
+    - _play_audio_file(path)
+    - _stop_playback()
+    - _play_selected_a()
+    - _play_selected_b()
+    - _ab_switch_play()
+    - _play_b_after_a()
 """
 
 import tkinter as tk

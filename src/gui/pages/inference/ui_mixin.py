@@ -2,6 +2,41 @@
 Inference UI Mixin.
 
 Contains all UI creation methods for the InferencePage.
+
+Required attributes (initialized in InferencePage.__init__):
+    - source_path: tk.StringVar - source audio file path
+    - output_path: tk.StringVar - output file path
+    - selected_model: tk.StringVar - selected model name
+    - pitch_shift: tk.IntVar - pitch shift value
+    - quality: tk.StringVar - quality preset
+    - feature_extractor: tk.StringVar - feature extractor selection
+    - f0_method: tk.StringVar - F0 extraction method
+    - device: tk.StringVar - device selection
+    - output_sample_rate: tk.StringVar - output sample rate
+    - cluster_ratio: tk.DoubleVar - clustering ratio
+    - separate_vocals: tk.BooleanVar - vocal separation toggle
+    - dereverb_audio: tk.BooleanVar - dereverb toggle
+    - separation_mode: tk.StringVar - separation mode for preprocessing
+    - progress_var: tk.DoubleVar - progress bar value
+    - status_var: tk.StringVar - status text
+    - elapsed_var: tk.StringVar - elapsed time display
+    - stage_var: tk.StringVar - current stage display
+    - file_info_*: tk.StringVar - file info display variables
+    - _last_directory: str - remembered directory for file dialogs
+    - _settings: SettingsManager - settings manager instance
+    - _model_cache: list - cached model list
+    - _model_cache_time: float - cache timestamp
+
+Methods provided by this mixin:
+    - _create_widgets(parent)
+    - _create_*_section(parent) - various UI sections
+    - _browse_source(), _browse_output()
+    - _on_source_path_changed()
+    - _reset_file_info(), _load_file_info(path)
+    - _update_fe_desc(), _update_f0_desc(), _update_dev_desc()
+    - _update_cluster_label(value)
+    - _refresh_models()
+    - _find_model_file(model_name)
 """
 
 import tkinter as tk
