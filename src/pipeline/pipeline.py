@@ -9,6 +9,7 @@ from enum import Enum
 import numpy as np
 import time
 import logging
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -321,13 +322,23 @@ class AudioPipeline:
             except Exception as e:
                 logger.error(f"Error in node {node.name}: {e}", exc_info=True)
                 node_times[node.name] = time.time() - node_start
-                # P2-11: Record failure information for downstream detection
-                node_failures[node.name] = f"{type(e).__name__}: {str(e)}"
+                # P2-11: Record detailed failure information for downstream detection
+                failure_context = {
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                    "traceback": traceback.format_exc(),
+                    "input_shape": current_audio.shape if current_audio is not None else None,
+                    "input_sample_rate": current_sr,
+                    "node_type": node.node_type.value if hasattr(node.node_type, 'value') else str(node.node_type),
+                }
+                node_failures[node.name] = failure_context
                 
-                # P1-4: Fail-fast mode - raise immediately
+                # P1-4: Fail-fast mode - raise immediately with detailed context
                 if fail_fast:
                     raise RuntimeError(
-                        f"Pipeline node '{node.name}' failed: {e}"
+                        f"Pipeline node '{node.name}' failed: {e}\n"
+                        f"Input shape: {failure_context['input_shape']}, "
+                        f"Sample rate: {failure_context['input_sample_rate']}"
                     ) from e
         
         total_time = time.time() - start_time

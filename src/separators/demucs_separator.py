@@ -4,8 +4,9 @@ Demucs Separator - Based on Demucs Audio separator
 Supports vocals/accompaniment/drums/bass and other 4-track separation.
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from pathlib import Path
+from collections import OrderedDict
 import numpy as np
 import threading
 
@@ -36,6 +37,11 @@ class DemucsSeparator(BaseSeparator):
     # Demucs model standard track order
     DEFAULT_TRACKS = ["vocals", "drums", "bass", "other"]
 
+    # Class-level LRU cache for models (shared across all instances)
+    _model_cache: OrderedDict = OrderedDict()
+    _model_cache_lock = threading.Lock()
+    _MAX_CACHED_MODELS = 3  # Maximum number of models to cache
+
     def __init__(
         self,
         model_name: str = "htdemucs",
@@ -60,8 +66,8 @@ class DemucsSeparator(BaseSeparator):
         self._model_lock = threading.Lock()
 
     def _load_model(self):
-        """DelayLoad Demucs Model (thread-safe)"""
-        # Fast path: already loaded
+        """DelayLoad Demucs Model (thread-safe with LRU cache)"""
+        # Fast path: already loaded in instance
         if self._model is not None:
             return
 
@@ -70,6 +76,18 @@ class DemucsSeparator(BaseSeparator):
             if self._model is not None:
                 return
 
+            # Check class-level cache
+            cache_key = (self.model_name, self.device)
+            with self._model_cache_lock:
+                if cache_key in self._model_cache:
+                    # Move to end (most recently used)
+                    self._model_cache.move_to_end(cache_key)
+                    cached_model, cached_demucs = self._model_cache[cache_key]
+                    self._model = cached_model
+                    self._demucs = cached_demucs
+                    return
+
+            # Load new model
             try:
                 from demucs import pretrained
                 from demucs.pretrained import get_model
@@ -81,6 +99,13 @@ class DemucsSeparator(BaseSeparator):
                 if self.device != "cpu":
                     self._demucs.to(self.device)
                 self._demucs.eval()
+
+                # Add to class-level cache with LRU eviction
+                with self._model_cache_lock:
+                    self._model_cache[cache_key] = (self._model, self._demucs)
+                    # Evict oldest if cache is full
+                    while len(self._model_cache) > self._MAX_CACHED_MODELS:
+                        self._model_cache.popitem(last=False)
             except ImportError:
                 raise ImportError(
                     "Demucs not installed. Please run: uv add demucs"

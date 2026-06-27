@@ -199,18 +199,24 @@ class PathValidator:
         return resolved
 
     def _is_in_allowed_dirs(self, path: Path) -> bool:
-        """Check if path is within allowed directory range"""
+        """Check if path is within allowed directory range using is_relative_to()"""
         # If no allowed directories configured, allow absolute paths
         if not self.allowed_dirs:
             return path.is_absolute()
         
-        # Check if within allowed directory
+        # Use is_relative_to() for robust path containment check (Python 3.9+)
+        # This is more secure than string matching as it handles edge cases correctly
         for allowed_dir in self.allowed_dirs:
             try:
-                path.relative_to(allowed_dir)
-                return True
-            except ValueError:
-                continue
+                if path.is_relative_to(allowed_dir):
+                    return True
+            except (ValueError, TypeError):
+                # Fallback for older Python versions or edge cases
+                try:
+                    path.relative_to(allowed_dir)
+                    return True
+                except ValueError:
+                    continue
         return False
 
     def _check_depth(self, path: Path) -> None:

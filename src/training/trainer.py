@@ -898,7 +898,11 @@ class RVCTrainer:
         """
         import torch
 
-        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
+        except TypeError:
+            # Fallback for older PyTorch versions
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
         if self.generator and "generator" in checkpoint and checkpoint["generator"]:
             self.generator.load_state_dict(checkpoint["generator"])

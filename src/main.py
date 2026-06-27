@@ -522,6 +522,13 @@ async def http_stream_run(request: Request):
             logger.info(f"Stream cancelled, run_id={run_id}")
             service.cancel_run(run_id, ctx)
             raise
+        except Exception as e:
+            logger.error(f"Stream error, run_id={run_id}, error={e}")
+            service.cancel_run(run_id, ctx)
+            raise
+        finally:
+            # Ensure cleanup happens regardless of how the generator exits
+            logger.debug(f"Stream generator cleanup, run_id={run_id}")
 
     response = StreamingResponse(disconnect_aware_generator(), media_type="text/event-stream")
     return response
