@@ -14,6 +14,7 @@ from gui.pages.dashboard import DashboardPage
 from gui.pages.training import TrainingPage
 from gui.pages.inference import InferencePage
 from gui.pages.separation import SeparationPage
+from gui.pages.comparison import ComparisonPage
 from gui.pages.models import ModelsPage
 from gui.pages.settings import SettingsPage
 
@@ -31,6 +32,7 @@ class SOMAApp:
         "training": TrainingPage,
         "inference": InferencePage,
         "separation": SeparationPage,
+        "comparison": ComparisonPage,
         "models": ModelsPage,
         "settings": SettingsPage,
     }

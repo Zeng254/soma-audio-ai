@@ -191,6 +191,7 @@ def create_default_nav_items() -> List[NavItem]:
         NavItem("Voice Clone", "🎤", "training", "Train voice models"),
         NavItem("Song Cover", "🎵", "inference", "Generate covers"),
         NavItem("Separation", "🎼", "separation", "Separate audio tracks"),
+        NavItem("Compare", "🔀", "comparison", "Compare conversion results"),
         NavItem("Models", "📁", "models", "Manage trained models"),
         NavItem("Settings", "⚙️", "settings", "Application settings"),
     ]
