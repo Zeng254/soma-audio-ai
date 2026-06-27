@@ -53,6 +53,7 @@ from .dataset import RVCDataset, create_dataloader, split_dataset
 from .trainer import RVCTrainer
 from .feature_extractor import HuBERTFeatureExtractor, F0Extractor, FeaturePipeline
 from .inference import RVCInference, VocoderWrapper
+from .cover_pipeline import CoverPipeline, CoverConfig, CoverResult
 from .cli import main as cli_main
 
 __all__ = [
@@ -84,6 +85,10 @@ __all__ = [
     # Inference
     "RVCInference",
     "VocoderWrapper",
+    # Cover Pipeline
+    "CoverPipeline",
+    "CoverConfig",
+    "CoverResult",
     # CLI
     "cli_main",
 ]

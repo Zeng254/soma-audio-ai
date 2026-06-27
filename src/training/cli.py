@@ -210,6 +210,119 @@ def cmd_export(args):
     return output_path
 
 
+def cmd_separate(args):
+    """Handle 'separate' subcommand."""
+    from src.separators.audio_separator import AudioSeparator
+
+    logger.info("Separating audio: %s", args.input)
+    
+    separator = AudioSeparator(
+        backend=args.backend,
+        device=args.device,
+    )
+    
+    # Perform separation
+    if args.mode == "hpss":
+        harmonic, percussive = separator.hpss(args.input)
+        # Save outputs
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        stem_name = Path(args.input).stem
+        _save_audio(harmonic, output_dir / f"{stem_name}_harmonic.wav", 44100)
+        _save_audio(percussive, output_dir / f"{stem_name}_percussive.wav", 44100)
+        
+        logger.info("HPSS separation complete:")
+        logger.info("  Harmonic: %s", output_dir / f"{stem_name}_harmonic.wav")
+        logger.info("  Percussive: %s", output_dir / f"{stem_name}_percussive.wav")
+        
+    elif args.mode == "dereverb":
+        dry = separator.dereverb(args.input, method=args.dereverb_method)
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        stem_name = Path(args.input).stem
+        _save_audio(dry, output_dir / f"{stem_name}_dry.wav", 44100)
+        
+        logger.info("Dereverberation complete:")
+        logger.info("  Output: %s", output_dir / f"{stem_name}_dry.wav")
+        
+    else:
+        # 2-stem or 4-stem separation
+        result = separator.separate(args.input, mode=args.mode)
+        
+        # Save outputs
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        stem_name = Path(args.input).stem
+        
+        if args.mode == "2stems":
+            vocals, accompaniment = result
+            _save_audio(vocals, output_dir / f"{stem_name}_vocals.wav", 44100)
+            _save_audio(accompaniment, output_dir / f"{stem_name}_accompaniment.wav", 44100)
+            logger.info("2-stem separation complete:")
+            logger.info("  Vocals: %s", output_dir / f"{stem_name}_vocals.wav")
+            logger.info("  Accompaniment: %s", output_dir / f"{stem_name}_accompaniment.wav")
+        else:  # 4stems
+            vocals, drums, bass, other = result
+            _save_audio(vocals, output_dir / f"{stem_name}_vocals.wav", 44100)
+            _save_audio(drums, output_dir / f"{stem_name}_drums.wav", 44100)
+            _save_audio(bass, output_dir / f"{stem_name}_bass.wav", 44100)
+            _save_audio(other, output_dir / f"{stem_name}_other.wav", 44100)
+            logger.info("4-stem separation complete:")
+            logger.info("  Vocals: %s", output_dir / f"{stem_name}_vocals.wav")
+            logger.info("  Drums: %s", output_dir / f"{stem_name}_drums.wav")
+            logger.info("  Bass: %s", output_dir / f"{stem_name}_bass.wav")
+            logger.info("  Other: %s", output_dir / f"{stem_name}_other.wav")
+
+
+def cmd_cover(args):
+    """Handle 'cover' subcommand."""
+    from .cover_pipeline import CoverPipeline, CoverConfig
+
+    logger.info("Generating AI cover: %s", args.input)
+    
+    config = CoverConfig(
+        separate_vocals=not args.no_separate,
+        separation_mode=args.mode,
+        separation_backend=args.backend,
+        dereverb=args.dereverb,
+        transpose=args.transpose,
+        mix_with_accompaniment=not args.no_mix,
+        vocal_volume=args.vocal_volume,
+        accompaniment_volume=args.accompaniment_volume,
+    )
+    
+    pipeline = CoverPipeline(
+        model_path=args.model,
+        config=config,
+        device=args.device,
+    )
+    
+    result = pipeline.generate_cover(
+        source_audio=args.input,
+        output_path=args.output,
+    )
+    
+    logger.info("Cover generation complete!")
+    logger.info("  Output: %s", result.output_path)
+    logger.info("  Sample rate: %d Hz", result.sample_rate)
+
+
+def _save_audio(audio, path, sample_rate):
+    """Helper to save audio to file."""
+    import numpy as np
+    from scipy.io import wavfile
+    
+    # Convert to 16-bit PCM
+    if audio.dtype != np.int16:
+        audio = np.clip(audio, -1.0, 1.0)
+        audio = (audio * 32767).astype(np.int16)
+    
+    wavfile.write(str(path), sample_rate, audio)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build argument parser."""
     parser = argparse.ArgumentParser(
@@ -335,6 +448,91 @@ def build_parser() -> argparse.ArgumentParser:
              "Defaults to config export_format or 'rvc' if not set.",
     )
 
+    # --- separate ---
+    p_separate = subparsers.add_parser(
+        "separate",
+        help="Separate audio into stems (vocals, accompaniment, etc.)",
+    )
+    p_separate.add_argument(
+        "input", type=str,
+        help="Input audio file path",
+    )
+    p_separate.add_argument(
+        "--mode", type=str, choices=["2stems", "4stems", "hpss", "dereverb"], default="2stems",
+        help="Separation mode: '2stems' (vocals+accompaniment), '4stems' (vocals+drums+bass+other), "
+             "'hpss' (harmonic+percussive), 'dereverb' (remove reverb)",
+    )
+    p_separate.add_argument(
+        "--backend", type=str, choices=["demucs", "msst", "librosa"], default="demucs",
+        help="Separation backend (default: demucs)",
+    )
+    p_separate.add_argument(
+        "--output-dir", type=str, default="output/separated",
+        help="Output directory for separated stems (default: output/separated)",
+    )
+    p_separate.add_argument(
+        "--dereverb-method", type=str, choices=["spectral", "wiener"], default="spectral",
+        help="Dereverberation method (default: spectral)",
+    )
+    p_separate.add_argument(
+        "--device", type=str, default=None,
+        help="Device for separation (cpu/cuda/mps)",
+    )
+
+    # --- cover ---
+    p_cover = subparsers.add_parser(
+        "cover",
+        help="Generate AI cover of a song",
+    )
+    p_cover.add_argument(
+        "input", type=str,
+        help="Input audio file path",
+    )
+    p_cover.add_argument(
+        "--model", type=str, required=True,
+        help="Path to trained RVC model (.pth)",
+    )
+    p_cover.add_argument(
+        "--output", type=str, default="output/cover.wav",
+        help="Output path for generated cover (default: output/cover.wav)",
+    )
+    p_cover.add_argument(
+        "--mode", type=str, choices=["2stems", "4stems"], default="2stems",
+        help="Separation mode for vocals extraction (default: 2stems)",
+    )
+    p_cover.add_argument(
+        "--backend", type=str, choices=["demucs", "msst", "librosa"], default="demucs",
+        help="Separation backend (default: demucs)",
+    )
+    p_cover.add_argument(
+        "--transpose", type=int, default=0,
+        help="Pitch shift in semitones (default: 0)",
+    )
+    p_cover.add_argument(
+        "--dereverb", action="store_true",
+        help="Apply dereverberation to extracted vocals",
+    )
+    p_cover.add_argument(
+        "--no-separate", action="store_true",
+        help="Skip vocals separation (input is already vocals)",
+    )
+    p_cover.add_argument(
+        "--no-mix", action="store_true",
+        help="Output only converted vocals, no mixing with accompaniment",
+    )
+    p_cover.add_argument(
+        "--vocal-volume", type=float, default=1.0,
+        help="Volume of converted vocals (default: 1.0)",
+    )
+    p_cover.add_argument(
+        "--accompaniment-volume", type=float, default=0.8,
+        help="Volume of accompaniment (default: 0.8)",
+    )
+    p_cover.add_argument(
+        "--device", type=str, default=None,
+        help="Device for inference (cpu/cuda/mps)",
+    )
+
     return parser
 
 
@@ -353,6 +551,8 @@ def main(argv=None):
         "preprocess": cmd_preprocess,
         "train": cmd_train,
         "export": cmd_export,
+        "separate": cmd_separate,
+        "cover": cmd_cover,
     }
 
     handler = commands.get(args.command)

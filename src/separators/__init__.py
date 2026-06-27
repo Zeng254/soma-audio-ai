@@ -6,10 +6,13 @@ Audio separator module - Provides vocals/accompaniment separation, dereverberati
 from .base import BaseSeparator, SeparationResult
 from .demucs_separator import DemucsSeparator
 from .msst_separator import MSSTSeparator
+from .audio_separator import AudioSeparator, SeparationMode
 
 __all__ = [
     "BaseSeparator",
     "SeparationResult", 
     "DemucsSeparator",
     "MSSTSeparator",
+    "AudioSeparator",
+    "SeparationMode",
 ]
