@@ -181,6 +181,16 @@ class BasePage(ttk.Frame, ABC):
                     pass
 
         return self.after(delay_ms, _guarded)
+
+    def cleanup(self):
+        """
+        Clean up resources when the page is being destroyed.
+
+        Subclasses should override this to shut down thread pools,
+        cancel pending operations, etc. Called by the app on exit.
+        Default implementation does nothing.
+        """
+        pass
     
     def create_button_row(self, parent: tk.Widget, buttons: list) -> ttk.Frame:
         """

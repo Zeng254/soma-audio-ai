@@ -1,9 +1,84 @@
 """
 Shared parameter constants for SOMA GUI pages.
 
-Centralizes option lists and defaults that are used across multiple pages
-(InferencePage, ComparisonPage) to avoid duplication and ensure consistency.
+Centralizes option lists, defaults, status strings, and type definitions
+that are used across multiple pages to avoid duplication and ensure consistency.
 """
+
+import threading
+from typing import Optional, Dict, Any
+try:
+    from typing import TypedDict
+except ImportError:
+    from typing_extensions import TypedDict
+
+
+# ── Task Status Constants (fix #5: status text constants) ──────────────
+
+STATUS_QUEUED = "queued"
+STATUS_RUNNING = "running"
+STATUS_DONE = "done"
+STATUS_FAILED = "failed"
+STATUS_CANCELLED = "cancelled"
+
+# Status display mapping (with icons)
+STATUS_DISPLAY = {
+    STATUS_QUEUED: "\u23f3 Queued",
+    STATUS_RUNNING: "\u2699 Running...",
+    STATUS_DONE: "\u2705 Done",
+    STATUS_FAILED: "\u274c Failed",
+    STATUS_CANCELLED: "\u23f9 Cancelled",
+}
+
+# UI status text constants (fix #5)
+STATUS_READY = "Ready"
+STATUS_STARTING = "Starting..."
+STATUS_LOADING_MODEL = "Loading model..."
+STATUS_LOADING_AUDIO = "Loading audio..."
+STATUS_PROCESSING = "Processing..."
+STATUS_SAVING = "Saving..."
+STATUS_COMPLETED = "Completed"
+STATUS_ERROR = "Error"
+STATUS_CANCELLED_UI = "Cancelled"
+
+
+# ── Task TypedDict (fix #3: type safety for task dicts) ────────────────
+
+class TaskConfig(TypedDict):
+    """Configuration for a single comparison task."""
+    model: str
+    pitch: int
+    feature_extractor: str
+    f0_method: str
+    device: str
+    sample_rate: str
+    cluster_ratio: float
+
+
+class ComparisonTask(TypedDict):
+    """A comparison task with all metadata."""
+    id: int
+    config: TaskConfig
+    status: str
+    result_path: Optional[str]
+    error: Optional[str]
+    duration: Optional[float]
+    cancel_flag: threading.Event
+    uuid: str
+
+
+# ── GPU Concurrency (fix #6: configurable) ─────────────────────────────
+
+# Default max workers by device type
+DEFAULT_MAX_WORKERS_CPU = 2
+DEFAULT_MAX_WORKERS_GPU = 1
+
+# SettingsManager keys
+SETTING_KEY_MAX_WORKERS = "comparison_max_workers"
+SETTING_KEY_DEVICE_TYPE = "comparison_device_type"
+
+
+# ── Feature / Model Constants ──────────────────────────────────────────
 
 # Feature extractors: name -> description
 FEATURE_EXTRACTORS = {

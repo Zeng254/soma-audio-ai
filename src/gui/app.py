@@ -119,9 +119,15 @@ class SOMAApp:
     def run(self):
         """Start the application main loop."""
         self.root.mainloop()
-    
+
     def quit(self):
-        """Quit the application."""
+        """Quit the application, cleaning up all page resources."""
+        # Cleanup all pages (shut down thread pools, etc.)
+        for page_key, page in self._pages.items():
+            try:
+                page.cleanup()
+            except Exception:
+                pass
         self.root.quit()
 
 

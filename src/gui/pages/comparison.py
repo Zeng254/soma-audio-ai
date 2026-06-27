@@ -14,6 +14,11 @@ Code quality fixes applied:
 - Model search depth limit (fix #10)
 - Shared parameter constants (fix #11)
 - Model scan with mtime cache (fix #7)
+- Status text constants (fix #5)
+- TypedDict for task dicts (fix #3)
+- Treeview incremental refresh (fix #4)
+- ThreadPoolExecutor cleanup on quit (fix #1)
+- Configurable GPU concurrency (fix #6)
 """
 
 import tkinter as tk
@@ -35,24 +40,17 @@ from gui.utils import (
     DEFAULT_SAMPLE_RATE, DEFAULT_F0_METHOD, DEFAULT_FEATURE_EXTRACTOR,
     DEFAULT_DEVICE, PITCH_MIN, PITCH_MAX,
     MODEL_CACHE_TTL, MODEL_SEARCH_MAX_DEPTH,
+    # Status constants (fix #5)
+    STATUS_QUEUED, STATUS_RUNNING, STATUS_DONE, STATUS_FAILED,
+    STATUS_CANCELLED, STATUS_DISPLAY,
+    STATUS_READY, STATUS_ERROR, STATUS_CANCELLED_UI,
+    # TypedDict (fix #3)
+    ComparisonTask,
+    # GPU concurrency (fix #6)
+    DEFAULT_MAX_WORKERS_CPU, DEFAULT_MAX_WORKERS_GPU,
+    SETTING_KEY_MAX_WORKERS, SETTING_KEY_DEVICE_TYPE,
 )
 
-
-# Task status constants
-STATUS_QUEUED = "queued"
-STATUS_RUNNING = "running"
-STATUS_DONE = "done"
-STATUS_FAILED = "failed"
-STATUS_CANCELLED = "cancelled"
-
-# Status display mapping
-STATUS_DISPLAY = {
-    STATUS_QUEUED: "\u23f3 Queued",
-    STATUS_RUNNING: "\u2699 Running...",
-    STATUS_DONE: "\u2705 Done",
-    STATUS_FAILED: "\u274c Failed",
-    STATUS_CANCELLED: "\u23f9 Cancelled",
-}
 
 # Column definitions for task list
 COLUMNS = ("id", "model", "pitch", "f0", "feature", "status", "time")
@@ -72,7 +70,7 @@ class ComparisonPage(BasePage):
 
     Features:
     - Multi-task queue with independent parameter sets
-    - Thread pool for parallel processing (max_workers=2)
+    - Thread pool for parallel processing (configurable max_workers)
     - Per-task config: model, pitch, F0 method, feature extractor,
       cluster ratio, device, sample rate
     - Task list with status tracking
@@ -103,12 +101,16 @@ class ComparisonPage(BasePage):
         self._settings = SettingsManager()
 
         # Task list with lock (fix #6)
-        self._tasks: List[Dict] = []
+        self._tasks: List[ComparisonTask] = []
         self._tasks_lock = threading.Lock()
         self._task_counter = 0
 
-        # Thread pool for parallel task execution
-        self._executor = ThreadPoolExecutor(max_workers=2)
+        # Treeview item mapping for incremental refresh (fix #4)
+        self._tree_item_map: Dict[int, str] = {}  # task_id -> treeview iid
+
+        # Thread pool for parallel task execution (fix #6: configurable)
+        max_workers = self._get_max_workers()
+        self._executor = ThreadPoolExecutor(max_workers=max_workers)
 
         # Playback state (cross-platform, fix #3)
         self._current_player: Optional[subprocess.Popen] = None
@@ -146,6 +148,31 @@ class ComparisonPage(BasePage):
         self._last_directory = self._settings.get(
             "comparison_last_dir", os.path.expanduser("~")
         )
+
+    def _get_max_workers(self) -> int:
+        """Get configured max workers for thread pool (fix #6)."""
+        try:
+            stored = self._settings.get(SETTING_KEY_MAX_WORKERS, None)
+            if stored is not None:
+                return max(1, int(stored))
+        except (ValueError, TypeError):
+            pass
+        # Auto-detect based on device
+        device_type = self._settings.get(SETTING_KEY_DEVICE_TYPE, "auto")
+        if device_type == "cuda":
+            return DEFAULT_MAX_WORKERS_GPU
+        return DEFAULT_MAX_WORKERS_CPU
+
+    def cleanup(self):
+        """Shut down thread pool on app exit (fix #1)."""
+        try:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            try:
+                self._executor.shutdown(wait=False)
+            except Exception:
+                pass
+        self._stop_playback()
 
     def _create_widgets(self):
         """Create comparison page widgets."""
@@ -722,7 +749,7 @@ class ComparisonPage(BasePage):
         with self._tasks_lock:
             self._task_counter += 1
             task_id = self._task_counter
-            task = {
+            task: ComparisonTask = {
                 "id": task_id,
                 "config": config,
                 "status": STATUS_QUEUED,
@@ -734,8 +761,9 @@ class ComparisonPage(BasePage):
             }
             self._tasks.append(task)
 
-        # Insert into treeview
-        self.task_tree.insert("", tk.END, iid=str(task_id), values=(
+        # Insert into treeview and track in item map (fix #4)
+        iid = str(task_id)
+        self.task_tree.insert("", tk.END, iid=iid, values=(
             task_id,
             config["model"],
             f"{config['pitch']:+d}",
@@ -744,6 +772,7 @@ class ComparisonPage(BasePage):
             STATUS_DISPLAY[STATUS_QUEUED],
             "--",
         ))
+        self._tree_item_map[task_id] = iid
 
         self._update_task_count()
         self._log(f"Task #{task_id} added: model={config['model']}, pitch={config['pitch']:+d}, "
@@ -782,7 +811,12 @@ class ComparisonPage(BasePage):
                     if task["status"] == STATUS_RUNNING:
                         task["cancel_flag"].set()
                     self._tasks.remove(task)
-            self.task_tree.delete(item_id)
+            try:
+                self.task_tree.delete(item_id)
+            except tk.TclError:
+                pass
+            # Clean up item map (fix #4)
+            self._tree_item_map.pop(task_id, None)
 
         self._update_task_count()
 
@@ -792,10 +826,13 @@ class ComparisonPage(BasePage):
             done_tasks = [t for t in self._tasks if t["status"] in (STATUS_DONE, STATUS_FAILED, STATUS_CANCELLED)]
             for task in done_tasks:
                 self._tasks.remove(task)
+                task_id = task["id"]
                 try:
-                    self.task_tree.delete(str(task["id"]))
+                    self.task_tree.delete(str(task_id))
                 except tk.TclError:
                     pass
+                # Clean up item map (fix #4)
+                self._tree_item_map.pop(task_id, None)
 
         self._update_task_count()
 
@@ -807,11 +844,15 @@ class ComparisonPage(BasePage):
             running = sum(1 for t in self._tasks if t["status"] == STATUS_RUNNING)
         self.task_count_label.configure(text=f"{total} tasks ({done} done, {running} running)")
 
-    def _update_task_in_tree(self, task_id: int, task: Dict):
-        """Update a task's display in the treeview (main thread)."""
+    def _update_task_in_tree(self, task_id: int, task: ComparisonTask):
+        """Update a task's display in the treeview (main thread, incremental fix #4).
+
+        Uses the item mapping to update only the changed row instead of
+        deleting and re-inserting all rows.
+        """
         try:
             iid = str(task_id)
-            self.task_tree.item(iid, values=(
+            values = (
                 task_id,
                 task["config"]["model"],
                 f"{task['config']['pitch']:+d}",
@@ -819,7 +860,14 @@ class ComparisonPage(BasePage):
                 task["config"]["feature_extractor"],
                 STATUS_DISPLAY.get(task["status"], task["status"]),
                 f"{task['duration']:.1f}s" if task["duration"] else "--",
-            ))
+            )
+            if iid in self._tree_item_map:
+                # Incremental update: just update the existing row
+                self.task_tree.item(iid, values=values)
+            else:
+                # Row doesn't exist yet, insert it
+                new_iid = self.task_tree.insert("", tk.END, iid=iid, values=values)
+                self._tree_item_map[task_id] = new_iid
         except tk.TclError:
             pass
 
@@ -1229,7 +1277,7 @@ class ComparisonPage(BasePage):
                 with self._tasks_lock:
                     self._task_counter += 1
                     task_id = self._task_counter
-                    task = {
+                    task: ComparisonTask = {
                         "id": task_id,
                         "config": config,
                         "status": STATUS_QUEUED,
@@ -1241,7 +1289,8 @@ class ComparisonPage(BasePage):
                     }
                     self._tasks.append(task)
 
-                self.task_tree.insert("", tk.END, iid=str(task_id), values=(
+                iid = str(task_id)
+                self.task_tree.insert("", tk.END, iid=iid, values=(
                     task_id,
                     config.get("model", "?"),
                     f"{config.get('pitch', 0):+d}",
@@ -1250,6 +1299,7 @@ class ComparisonPage(BasePage):
                     STATUS_DISPLAY[STATUS_QUEUED],
                     "--",
                 ))
+                self._tree_item_map[task_id] = iid
 
             self._update_task_count()
             self._log(f"Loaded {len(configs)} task(s) from {filepath}")
