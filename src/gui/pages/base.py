@@ -36,6 +36,7 @@ class BasePage(ttk.Frame, ABC):
         super().__init__(parent, style="TFrame")
         self.app = app
         self._is_visible = False
+        self._cleaned_up = False  # Idempotent cleanup guard (fix #1)
         
         # Create a scrollable content area
         self._create_scrollable_area()
@@ -189,8 +190,12 @@ class BasePage(ttk.Frame, ABC):
         Subclasses should override this to shut down thread pools,
         cancel pending operations, etc. Called by the app on exit.
         Default implementation does nothing.
+
+        Idempotent: safe to call multiple times without side effects.
         """
-        pass
+        if self._cleaned_up:
+            return
+        self._cleaned_up = True
     
     def create_button_row(self, parent: tk.Widget, buttons: list) -> ttk.Frame:
         """

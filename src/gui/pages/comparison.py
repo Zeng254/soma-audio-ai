@@ -30,6 +30,7 @@ import subprocess
 import sys
 import time
 import uuid
+import logging
 from typing import Optional, List, Dict
 from concurrent.futures import ThreadPoolExecutor
 from gui.pages.base import BasePage
@@ -150,13 +151,26 @@ class ComparisonPage(BasePage):
         )
 
     def _get_max_workers(self) -> int:
-        """Get configured max workers for thread pool (fix #6)."""
+        """Get configured max workers for thread pool (fix #6).
+
+        Falls back to defaults if stored value is invalid (<=0 or non-numeric).
+        Logs a warning when fallback is triggered.
+        """
+        logger = logging.getLogger(__name__)
         try:
             stored = self._settings.get(SETTING_KEY_MAX_WORKERS, None)
             if stored is not None:
-                return max(1, int(stored))
-        except (ValueError, TypeError):
-            pass
+                value = int(stored)
+                if value <= 0:
+                    logger.warning(
+                        "Invalid max_workers=%d (<=0), falling back to default", value
+                    )
+                else:
+                    return value
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                "Cannot parse max_workers setting: %s, falling back to default", e
+            )
         # Auto-detect based on device
         device_type = self._settings.get(SETTING_KEY_DEVICE_TYPE, "auto")
         if device_type == "cuda":
@@ -164,14 +178,30 @@ class ComparisonPage(BasePage):
         return DEFAULT_MAX_WORKERS_CPU
 
     def cleanup(self):
-        """Shut down thread pool on app exit (fix #1)."""
-        try:
-            self._executor.shutdown(wait=False, cancel_futures=True)
-        except Exception:
+        """Shut down thread pool on app exit (fix #1).
+
+        Idempotent: safe to call multiple times.
+        Handles Python < 3.9 where cancel_futures is not available.
+        """
+        if self._cleaned_up:
+            return
+        self._cleaned_up = True
+
+        # Python 3.9+ supports cancel_futures; older versions do not
+        if sys.version_info >= (3, 9):
+            try:
+                self._executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                try:
+                    self._executor.shutdown(wait=False)
+                except Exception:
+                    pass
+        else:
             try:
                 self._executor.shutdown(wait=False)
             except Exception:
                 pass
+
         self._stop_playback()
 
     def _create_widgets(self):
