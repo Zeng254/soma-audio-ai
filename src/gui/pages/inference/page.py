@@ -5,13 +5,13 @@ Provides interface for AI cover generation (voice conversion).
 Uses Mixin pattern to separate UI creation, worker logic, and page lifecycle.
 
 MRO (Method Resolution Order):
-    InferencePage -> BasePage -> InferenceUIMixin -> InferenceWorkerMixin -> object
-    - BasePage provides: safe_after, _widget_alive, cleanup, on_show, on_hide
+    InferencePage -> InferenceUIMixin -> InferenceWorkerMixin -> BasePage -> object
     - InferenceUIMixin provides: _create_widgets, _create_*_section, _browse_*,
       file info, model management (_refresh_models, _find_model_file)
     - InferenceWorkerMixin provides: _start_conversion, _stop_conversion,
       _conversion_worker, _conversion_complete, _conversion_error,
       timer, logging, stage management
+    - BasePage provides: safe_after, _widget_alive, cleanup, on_show, on_hide
     - No method name conflicts between mixins (verified).
 """
 
@@ -30,8 +30,8 @@ from .ui_mixin import InferenceUIMixin
 from .worker_mixin import InferenceWorkerMixin
 
 
-# MRO: InferencePage -> BasePage -> InferenceUIMixin -> InferenceWorkerMixin -> object
-class InferencePage(BasePage, InferenceUIMixin, InferenceWorkerMixin):
+# MRO: InferencePage -> InferenceUIMixin -> InferenceWorkerMixin -> BasePage -> object
+class InferencePage(InferenceUIMixin, InferenceWorkerMixin, BasePage):
     """
     Inference page for generating AI covers.
 
@@ -52,9 +52,9 @@ class InferencePage(BasePage, InferenceUIMixin, InferenceWorkerMixin):
     - Friendly error handling
     """
 
-    PAGE_NAME = "Song Cover"
+    PAGE_NAME = "翻唱生成"
     PAGE_ICON = "\U0001f3b5"
-    PAGE_DESCRIPTION = "Generate covers"
+    PAGE_DESCRIPTION = "AI翻唱生成"
 
     def __init__(self, parent: tk.Widget, app: Optional[object] = None):
         """Initialize the inference page.
@@ -87,7 +87,11 @@ class InferencePage(BasePage, InferenceUIMixin, InferenceWorkerMixin):
         BasePage reads/writes:
             - _cleaned_up (idempotent cleanup flag)
         """
-        super().__init__(parent, app)
+        # ============================================================
+        # IMPORTANT: All attributes MUST be initialized BEFORE super().__init__()
+        # because BasePage.__init__() calls self._create_widgets() which
+        # references these attributes.
+        # ============================================================
 
         # ---- Settings manager (singleton, thread-safe) ----
         self._settings = SettingsManager()
@@ -112,7 +116,7 @@ class InferencePage(BasePage, InferenceUIMixin, InferenceWorkerMixin):
 
         # Basic parameters
         self.pitch_shift = tk.IntVar(value=0)
-        self.quality = tk.StringVar(value="High")
+        self.quality = tk.StringVar(value="高质量")
 
         # Advanced parameters
         self.feature_extractor = tk.StringVar(value=DEFAULT_FEATURE_EXTRACTOR)
@@ -128,7 +132,7 @@ class InferencePage(BasePage, InferenceUIMixin, InferenceWorkerMixin):
 
         # Progress display
         self.progress_var = tk.DoubleVar(value=0)
-        self.status_var = tk.StringVar(value="Ready")
+        self.status_var = tk.StringVar(value="就绪")
         self.elapsed_var = tk.StringVar(value="")
         self.stage_var = tk.StringVar(value="")
 
@@ -137,7 +141,7 @@ class InferencePage(BasePage, InferenceUIMixin, InferenceWorkerMixin):
         self.file_info_samplerate = tk.StringVar(value="--")
         self.file_info_channels = tk.StringVar(value="--")
         self.file_info_filesize = tk.StringVar(value="--")
-        self.file_info_filename = tk.StringVar(value="No file selected")
+        self.file_info_filename = tk.StringVar(value="未选择文件")
 
         # ---- Remembered last directory (from SettingsManager) ----
         self._last_directory = self._settings.get(
@@ -150,6 +154,11 @@ class InferencePage(BasePage, InferenceUIMixin, InferenceWorkerMixin):
         # Model scan cache (fix #7)
         self._model_cache: List[str] = []
         self._model_cache_time: float = 0.0
+
+        # ============================================================
+        # Now call super().__init__() which triggers _create_widgets()
+        # ============================================================
+        super().__init__(parent, app)
 
     def cleanup(self):
         """Clean up resources when page is destroyed."""

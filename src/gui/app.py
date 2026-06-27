@@ -1,7 +1,7 @@
 """
-Main application window for SOMA GUI.
+SOMA GUI 主应用窗口。
 
-Provides the primary window with navigation and page management.
+提供带导航和页面管理的主窗口。
 """
 
 import tkinter as tk
@@ -21,12 +21,12 @@ from gui.pages.settings import SettingsPage
 
 class SOMAApp:
     """
-    Main SOMA AI application window.
+    SOMA AI 主应用窗口。
     
-    Manages navigation, page switching, and application state.
+    管理导航、页面切换和应用程序状态。
     """
     
-    # Page registry
+    # 页面注册表
     PAGES: Dict[str, Type[BasePage]] = {
         "dashboard": DashboardPage,
         "training": TrainingPage,
@@ -38,91 +38,91 @@ class SOMAApp:
     }
     
     def __init__(self):
-        """Initialize the application."""
-        # Create root window
+        """初始化应用程序。"""
+        # 创建主窗口
         self.root = tk.Tk()
-        self.root.title("SOMA AI - Cover Workstation")
+        self.root.title("SOMA AI - 翻唱工作站")
         self.root.geometry("1200x800")
         self.root.minsize(900, 600)
         
-        # Apply theme
+        # 应用主题
         self.theme = Theme(self.root)
         
-        # Page instances
+        # 页面实例
         self._pages: Dict[str, BasePage] = {}
         self._current_page: Optional[str] = None
         
-        # Build UI
+        # 构建界面
         self._create_layout()
         self._create_pages()
         
-        # Show initial page
+        # 显示初始页面
         self.navigate_to("dashboard")
     
     def _create_layout(self):
-        """Create the main layout structure."""
-        # Main container
+        """创建主布局结构。"""
+        # 主容器
         self.main_container = ttk.Frame(self.root, style="TFrame")
         self.main_container.pack(fill=tk.BOTH, expand=True)
         
-        # Left sidebar - Navigation
+        # 左侧边栏 - 导航
         self.nav_sidebar = NavigationSidebar(
             self.main_container,
             on_navigate=self.navigate_to
         )
         self.nav_sidebar.pack(side=tk.LEFT, fill=tk.Y)
         
-        # Add navigation items
+        # 添加导航项
         for item in create_default_nav_items():
             self.nav_sidebar.add_item(item, is_active=(item.page_key == "dashboard"))
         
-        # Separator
+        # 分隔线
         sep = tk.Frame(self.main_container, width=1, bg=Colors.BORDER)
         sep.pack(side=tk.LEFT, fill=tk.Y)
         
-        # Right content area
+        # 右侧内容区域
         self.content_area = ttk.Frame(self.main_container, style="TFrame")
         self.content_area.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
     
     def _create_pages(self):
-        """Create all page instances."""
+        """创建所有页面实例。"""
         for page_key, page_class in self.PAGES.items():
             page = page_class(self.content_area, app=self)
             self._pages[page_key] = page
     
     def navigate_to(self, page_key: str):
         """
-        Navigate to the specified page.
+        导航到指定页面。
         
         Args:
-            page_key: Key of the page to navigate to
+            page_key: 要导航到的页面键
         """
         if page_key not in self._pages:
-            print(f"Unknown page: {page_key}")
+            print(f"未知页面: {page_key}")
             return
         
-        # Hide current page
+        # 隐藏当前页面
         if self._current_page and self._current_page in self._pages:
             current = self._pages[self._current_page]
             current.on_hide()
             current.pack_forget()
         
-        # Show new page
+        # 显示新页面
         self._current_page = page_key
         new_page = self._pages[page_key]
         new_page.pack(fill=tk.BOTH, expand=True)
         new_page.on_show()
         
-        # Update navigation
+        # 更新导航
         self.nav_sidebar._set_active(page_key)
     
     def run(self):
-        """Start the application main loop."""
+        """启动应用程序主循环。"""
         self.root.mainloop()
 
     def quit(self):
-        """Quit the application, cleaning up all page resources."""
-        # Cleanup all pages (shut down thread pools, etc.)
+        """退出应用程序，清理所有页面资源。"""
+        # 清理所有页面（关闭线程池等）
         for page_key, page in self._pages.items():
             try:
                 page.cleanup()
@@ -132,7 +132,7 @@ class SOMAApp:
 
 
 def main():
-    """Entry point for the GUI application."""
+    """GUI 应用程序入口。"""
     app = SOMAApp()
     app.run()
 

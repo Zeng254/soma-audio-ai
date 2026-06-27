@@ -1,7 +1,7 @@
 """
-Dashboard page for SOMA GUI.
+仪表盘页面 - SOMA GUI
 
-Provides the home screen with quick actions and recent activity.
+提供主屏幕，包含快速操作和最近活动。
 """
 
 import tkinter as tk
@@ -13,62 +13,62 @@ from gui.styles import Colors, Fonts
 
 class DashboardPage(BasePage):
     """
-    Dashboard page showing overview and quick actions.
+    仪表盘页面 - 显示概览和快速操作。
     
-    Features:
-    - Project info and version
-    - Quick action buttons
-    - Recent activity list
-    - System status
+    功能：
+    - 项目信息和版本
+    - 快速操作按钮
+    - 最近活动列表
+    - 系统状态
     """
     
-    PAGE_NAME = "Dashboard"
+    PAGE_NAME = "仪表盘"
     PAGE_ICON = "🏠"
-    PAGE_DESCRIPTION = "Home and quick actions"
+    PAGE_DESCRIPTION = "主页和快速操作"
     
     def __init__(self, parent: tk.Widget, app: Optional[object] = None):
-        """Initialize the dashboard page."""
+        """初始化仪表盘页面。"""
         super().__init__(parent, app)
     
     def _create_widgets(self):
-        """Create dashboard widgets."""
-        # Title section
+        """创建仪表盘组件。"""
+        # 标题区域
         self.create_title_section(
             self.content_frame,
-            "Welcome to SOMA AI",
-            "Your AI-powered cover workstation"
+            "欢迎使用 SOMA AI",
+            "您的 AI 驱动翻唱工作站"
         )
         
-        # Quick actions card
+        # 快速操作卡片
         self._create_quick_actions()
         
-        # System status card
+        # 系统状态卡片
         self._create_system_status()
         
-        # Recent activity card
+        # 最近活动卡片
         self._create_recent_activity()
     
     def _create_quick_actions(self):
-        """Create quick action buttons section."""
-        card = self.create_card(self.content_frame, "Quick Actions")
+        """创建快速操作按钮区域。"""
+        card = self.create_card(self.content_frame, "快速操作")
         
-        # Create button grid
+        # 创建按钮网格
         button_frame = ttk.Frame(card, style="Card.TFrame")
         button_frame.pack(fill=tk.X)
         
-        # Quick action buttons
+        # 快速操作按钮
         actions = [
-            ("🎤", "Start Training", "Train a new voice model", self._on_start_training),
-            ("🎵", "Create Cover", "Generate an AI cover", self._on_create_cover),
-            ("🎼", "Separate Audio", "Split vocals and instruments", self._on_separate_audio),
-            ("📁", "Manage Models", "View and manage models", self._on_manage_models),
+            ("🎤", "开始训练", "训练新的声音模型", self._on_start_training),
+            ("🎵", "制作翻唱", "生成 AI 翻唱", self._on_create_cover),
+            ("🎼", "分离音频", "分离人声和伴奏", self._on_separate_audio),
+            ("📁", "管理模型", "查看和管理模型", self._on_manage_models),
         ]
         
         for i, (icon, title, desc, cmd) in enumerate(actions):
             btn_frame = ttk.Frame(button_frame, style="Card.TFrame")
             btn_frame.pack(side=tk.LEFT, padx=(0, 15), fill=tk.X, expand=True)
             
-            # Action button
+            # 操作按钮
             btn = tk.Button(
                 btn_frame,
                 text=f"{icon}\n{title}",
@@ -85,23 +85,23 @@ class DashboardPage(BasePage):
             )
             btn.pack(fill=tk.X)
             
-            # Description
+            # 描述
             desc_label = ttk.Label(btn_frame, text=desc, style="Muted.TLabel",
                                   wraplength=150)
             desc_label.pack(anchor=tk.W, pady=(5, 0))
     
     def _create_system_status(self):
-        """Create system status section."""
-        card = self.create_card(self.content_frame, "System Status")
+        """创建系统状态区域。"""
+        card = self.create_card(self.content_frame, "系统状态")
         
         status_frame = ttk.Frame(card, style="Card.TFrame")
         status_frame.pack(fill=tk.X)
         
-        # Status items
+        # 状态项目
         statuses = [
-            ("Device", self._get_device_info(), Colors.ACCENT_SUCCESS),
-            ("Models", f"{self._get_model_count()} trained", Colors.ACCENT_INFO),
-            ("Storage", self._get_storage_info(), Colors.ACCENT_WARNING),
+            ("计算设备", self._get_device_info(), Colors.ACCENT_SUCCESS),
+            ("模型数量", f"{self._get_model_count()} 个已训练", Colors.ACCENT_INFO),
+            ("存储空间", self._get_storage_info(), Colors.ACCENT_WARNING),
         ]
         
         for label, value, color in statuses:
@@ -115,22 +115,22 @@ class DashboardPage(BasePage):
             value_label.pack(side=tk.LEFT)
     
     def _create_recent_activity(self):
-        """Create recent activity section."""
-        card = self.create_card(self.content_frame, "Recent Activity")
+        """创建最近活动区域。"""
+        card = self.create_card(self.content_frame, "最近活动")
         
-        # Activity list
+        # 活动列表
         activity_frame = ttk.Frame(card, style="Card.TFrame")
         activity_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Sample recent items (would be populated from actual data)
+        # 示例最近项目（实际会从数据填充）
         recent_items = [
-            ("🎤", "Model 'Aria_v2' training completed", "2 hours ago"),
-            ("🎵", "Cover 'Song_X' generated", "Yesterday"),
-            ("🎼", "Audio separation completed", "3 days ago"),
+            ("🎤", "模型 'Aria_v2' 训练完成", "2 小时前"),
+            ("🎵", "翻唱 'Song_X' 已生成", "昨天"),
+            ("🎼", "音频分离完成", "3 天前"),
         ]
         
         if not recent_items:
-            ttk.Label(activity_frame, text="No recent activity",
+            ttk.Label(activity_frame, text="暂无最近活动",
                      style="Muted.TLabel").pack(anchor=tk.W, pady=10)
         else:
             for icon, text, time in recent_items:
@@ -142,46 +142,46 @@ class DashboardPage(BasePage):
                 ttk.Label(row, text=time, style="Muted.TLabel").pack(side=tk.RIGHT)
     
     def _get_device_info(self) -> str:
-        """Get current device information."""
+        """获取当前设备信息。"""
         try:
             import torch
             if torch.cuda.is_available():
                 return f"CUDA ({torch.cuda.get_device_name(0)})"
             return "CPU"
         except ImportError:
-            return "CPU (torch not available)"
+            return "CPU（torch 未安装）"
     
     def _get_model_count(self) -> int:
-        """Get the number of trained models."""
-        # Would query actual model storage
+        """获取已训练模型数量。"""
+        # 实际会查询模型存储
         return 0
     
     def _get_storage_info(self) -> str:
-        """Get storage usage information."""
-        # Would calculate actual storage usage
-        return "0 MB used"
+        """获取存储使用信息。"""
+        # 实际会计算存储使用量
+        return "已使用 0 MB"
     
     def _on_start_training(self):
-        """Navigate to training page."""
+        """导航到训练页面。"""
         if self.app:
             self.app.navigate_to("training")
     
     def _on_create_cover(self):
-        """Navigate to inference page."""
+        """导航到推理页面。"""
         if self.app:
             self.app.navigate_to("inference")
     
     def _on_separate_audio(self):
-        """Navigate to separation page."""
+        """导航到分离页面。"""
         if self.app:
             self.app.navigate_to("separation")
     
     def _on_manage_models(self):
-        """Navigate to models page."""
+        """导航到模型管理页面。"""
         if self.app:
             self.app.navigate_to("models")
     
     def _on_visible(self):
-        """Called when page becomes visible - refresh data."""
-        # Refresh status information
+        """页面变为可见时调用 - 刷新数据。"""
+        # 刷新状态信息
         pass

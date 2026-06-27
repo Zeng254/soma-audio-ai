@@ -46,8 +46,8 @@ class ComparisonPage(
     - BasePage: Base functionality (safe_after, widget_alive, etc.)
     """
 
-    PAGE_NAME = "comparison"
-    PAGE_TITLE = "Compare"
+    PAGE_NAME = "对比试听"
+    PAGE_TITLE = "对比试听"
     PAGE_ICON = "\U0001f4ca"
 
     def __init__(self, parent: tk.Widget, **kwargs):
@@ -90,7 +90,12 @@ class ComparisonPage(
         BasePage reads/writes:
             - _cleaned_up (idempotent cleanup flag)
         """
-        super().__init__(parent, **kwargs)
+        # ============================================================
+        # IMPORTANT: All attributes MUST be initialized BEFORE super().__init__()
+        # because BasePage.__init__() calls self._create_widgets() which
+        # references these attributes.
+        # ============================================================
+        import threading
 
         # ---- Settings manager (fix #1: singleton) ----
         self._settings = SettingsManager()
@@ -99,7 +104,6 @@ class ComparisonPage(
         # Used by: WorkerMixin (add/remove/update tasks), PlaybackMixin (read completed)
         self._tasks = []  # List of ComparisonTask dicts
         self._task_counter = 0
-        import threading
         self._tasks_lock = threading.Lock()  # Protects _tasks list
         self._tree_item_map = {}  # task_id -> treeview iid mapping (fix #4)
 
@@ -141,7 +145,7 @@ class ComparisonPage(
         self.elapsed_var = tk.StringVar(value="0:00")
 
         # File info variables
-        self.file_info_filename = tk.StringVar(value="No file selected")
+        self.file_info_filename = tk.StringVar(value="未选择文件")
         self.file_info_duration = tk.StringVar(value="--")
         self.file_info_samplerate = tk.StringVar(value="--")
         self.file_info_channels = tk.StringVar(value="--")
@@ -156,8 +160,10 @@ class ComparisonPage(
         if saved_output:
             self.output_dir.set(saved_output)
 
-        # Build UI
-        self._create_widgets()
+        # ============================================================
+        # Now call super().__init__() which triggers _create_widgets()
+        # ============================================================
+        super().__init__(parent, **kwargs)
 
     def cleanup(self):
         """Clean up resources (idempotent, fix #1)."""

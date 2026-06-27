@@ -1,7 +1,7 @@
 """
-Training page for SOMA GUI.
+训练页面 - SOMA GUI
 
-Provides interface for voice model training with real-time progress.
+提供语音模型训练界面，支持实时进度显示。
 """
 
 import tkinter as tk
@@ -14,21 +14,21 @@ from gui.styles import Colors, Fonts
 
 class TrainingPage(BasePage):
     """
-    Training page for voice model training.
+    语音克隆训练页面。
     
-    Features:
-    - Dataset path selection
-    - Model name configuration
-    - Training parameters
-    - Real-time progress and logging
-    - Pause/Resume/Stop controls
+    功能:
+    - 数据集路径选择
+    - 模型名称配置
+    - 训练参数设置
+    - 实时进度和日志显示
+    - 暂停/继续/停止控制
     """
     
-    PAGE_NAME = "Voice Clone"
+    PAGE_NAME = "语音克隆"
     PAGE_ICON = "🎤"
-    PAGE_DESCRIPTION = "Train voice models"
+    PAGE_DESCRIPTION = "训练语音模型"
     
-    # Default training parameters
+    # 默认训练参数
     DEFAULT_PARAMS = {
         "epochs": 100,
         "batch_size": 16,
@@ -37,15 +37,18 @@ class TrainingPage(BasePage):
     }
     
     def __init__(self, parent: tk.Widget, app: Optional[object] = None):
-        """Initialize the training page."""
-        super().__init__(parent, app)
+        """初始化训练页面。"""
+        # ============================================================
+        # Bug 1 修复：所有变量初始化必须在 super().__init__() 之前
+        # 因为 BasePage.__init__() 会调用 _create_widgets()
+        # ============================================================
         
-        # Training state
+        # 训练状态
         self._is_training = False
         self._is_paused = False
         self._training_thread: Optional[threading.Thread] = None
         
-        # Variables
+        # Tkinter 变量
         self.dataset_path = tk.StringVar()
         self.model_name = tk.StringVar(value="my_voice_model")
         self.epochs = tk.IntVar(value=self.DEFAULT_PARAMS["epochs"])
@@ -53,22 +56,25 @@ class TrainingPage(BasePage):
         self.learning_rate = tk.DoubleVar(value=self.DEFAULT_PARAMS["learning_rate"])
         self.save_every = tk.IntVar(value=self.DEFAULT_PARAMS["save_every"])
         self.progress_var = tk.DoubleVar(value=0)
-        self.status_var = tk.StringVar(value="Ready")
+        self.status_var = tk.StringVar(value="就绪")
+        
+        # 现在调用 super().__init__()，它会调用 _create_widgets()
+        super().__init__(parent, app)
     
     def _create_widgets(self):
-        """Create training page widgets."""
-        # Title section
+        """创建训练页面组件。"""
+        # 标题区域
         self.create_title_section(
             self.content_frame,
-            "Voice Clone Training",
-            "Train a custom voice model from audio samples"
+            "语音克隆训练",
+            "从音频样本训练自定义语音模型"
         )
         
-        # Main content area with two columns
+        # 主内容区域（两列布局）
         main_frame = ttk.Frame(self.content_frame, style="TFrame")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Left column - Configuration
+        # 左列 - 配置
         left_frame = ttk.Frame(main_frame, style="TFrame")
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
@@ -76,7 +82,7 @@ class TrainingPage(BasePage):
         self._create_model_section(left_frame)
         self._create_parameters_section(left_frame)
         
-        # Right column - Progress and logs
+        # 右列 - 进度和日志
         right_frame = ttk.Frame(main_frame, style="TFrame")
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
         
@@ -84,49 +90,49 @@ class TrainingPage(BasePage):
         self._create_log_section(right_frame)
     
     def _create_dataset_section(self, parent: tk.Widget):
-        """Create dataset selection section."""
-        card = self.create_card(parent, "Training Dataset")
+        """创建数据集选择区域。"""
+        card = self.create_card(parent, "训练数据集")
         
-        # Path entry with browse button
+        # 路径输入框和浏览按钮
         path_frame = ttk.Frame(card, style="Card.TFrame")
         path_frame.pack(fill=tk.X)
         
         path_entry = ttk.Entry(path_frame, textvariable=self.dataset_path)
         path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
         
-        browse_btn = ttk.Button(path_frame, text="Browse...",
+        browse_btn = ttk.Button(path_frame, text="浏览...",
                                style="Secondary.TButton",
                                command=self._browse_dataset)
         browse_btn.pack(side=tk.RIGHT)
         
-        # Help text
+        # 帮助文字
         help_label = ttk.Label(card, 
-                              text="Select folder containing WAV files (16kHz+ recommended)",
+                              text="选择包含 WAV 文件的文件夹（建议 16kHz 以上）",
                               style="Muted.TLabel")
         help_label.pack(anchor=tk.W, pady=(10, 0))
     
     def _create_model_section(self, parent: tk.Widget):
-        """Create model configuration section."""
-        card = self.create_card(parent, "Model Configuration")
+        """创建模型配置区域。"""
+        card = self.create_card(parent, "模型配置")
         
-        # Model name
+        # 模型名称
         name_frame = ttk.Frame(card, style="Card.TFrame")
         name_frame.pack(fill=tk.X)
         
-        ttk.Label(name_frame, text="Model Name:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(name_frame, text="模型名称:", style="Card.TLabel").pack(side=tk.LEFT)
         name_entry = ttk.Entry(name_frame, textvariable=self.model_name)
         name_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
     
     def _create_parameters_section(self, parent: tk.Widget):
-        """Create training parameters section."""
-        card = self.create_card(parent, "Training Parameters")
+        """创建训练参数区域。"""
+        card = self.create_card(parent, "训练参数")
         
-        # Parameters grid
+        # 参数网格
         params = [
-            ("Epochs:", self.epochs, "100", 1, 10000),
-            ("Batch Size:", self.batch_size, "16", 1, 128),
-            ("Learning Rate:", self.learning_rate, "0.001", 0.00001, 0.1),
-            ("Save Every N:", self.save_every, "10", 1, 100),
+            ("训练轮数:", self.epochs, "100", 1, 10000),
+            ("批次大小:", self.batch_size, "16", 1, 128),
+            ("学习率:", self.learning_rate, "0.001", 0.00001, 0.1),
+            ("每 N 轮保存:", self.save_every, "10", 1, 100),
         ]
         
         for label, var, default, min_val, max_val in params:
@@ -148,32 +154,32 @@ class TrainingPage(BasePage):
             )
             spinbox.pack(side=tk.LEFT)
         
-        # Start/Stop buttons
+        # 开始/停止按钮
         button_frame = ttk.Frame(card, style="Card.TFrame")
         button_frame.pack(fill=tk.X, pady=(20, 0))
         
-        self.start_btn = ttk.Button(button_frame, text="▶ Start Training",
+        self.start_btn = ttk.Button(button_frame, text="▶ 开始训练",
                                    style="Primary.TButton",
                                    command=self._start_training)
         self.start_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.pause_btn = ttk.Button(button_frame, text="⏸ Pause",
+        self.pause_btn = ttk.Button(button_frame, text="⏸ 暂停",
                                    style="Secondary.TButton",
                                    command=self._pause_training,
                                    state=tk.DISABLED)
         self.pause_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.stop_btn = ttk.Button(button_frame, text="⏹ Stop",
+        self.stop_btn = ttk.Button(button_frame, text="⏹ 停止",
                                   style="Danger.TButton",
                                   command=self._stop_training,
                                   state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT)
     
     def _create_progress_section(self, parent: tk.Widget):
-        """Create progress display section."""
-        card = self.create_card(parent, "Training Progress")
+        """创建进度显示区域。"""
+        card = self.create_card(parent, "训练进度")
         
-        # Progress bar
+        # 进度条
         progress_frame = ttk.Frame(card, style="Card.TFrame")
         progress_frame.pack(fill=tk.X)
         
@@ -185,38 +191,38 @@ class TrainingPage(BasePage):
         )
         self.progress_bar.pack(fill=tk.X, pady=(0, 10))
         
-        # Status info
+        # 状态信息
         status_frame = ttk.Frame(card, style="Card.TFrame")
         status_frame.pack(fill=tk.X)
         
-        ttk.Label(status_frame, text="Status:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(status_frame, text="状态:", style="Card.TLabel").pack(side=tk.LEFT)
         self.status_label = ttk.Label(status_frame, textvariable=self.status_var,
                                      style="Card.TLabel")
         self.status_label.pack(side=tk.LEFT, padx=(10, 0))
         
-        # Epoch info
-        self.epoch_label = ttk.Label(card, text="Epoch: 0 / 0",
+        # 轮次信息
+        self.epoch_label = ttk.Label(card, text="轮次: 0 / 0",
                                     style="Muted.TLabel")
         self.epoch_label.pack(anchor=tk.W, pady=(10, 0))
         
-        # Loss info
-        self.loss_label = ttk.Label(card, text="Loss: N/A",
+        # 损失信息
+        self.loss_label = ttk.Label(card, text="损失: N/A",
                                    style="Muted.TLabel")
         self.loss_label.pack(anchor=tk.W)
     
     def _create_log_section(self, parent: tk.Widget):
-        """Create log output section."""
-        card = self.create_card(parent, "Training Log")
+        """创建日志输出区域。"""
+        card = self.create_card(parent, "训练日志")
         
-        # Log text widget with scrollbar
+        # 日志文本组件和滚动条
         log_frame = ttk.Frame(card, style="Card.TFrame")
         log_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Scrollbar
+        # 滚动条
         scrollbar = ttk.Scrollbar(log_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Text widget
+        # 文本组件
         self.log_text = tk.Text(
             log_frame,
             height=12,
@@ -230,74 +236,74 @@ class TrainingPage(BasePage):
         self.log_text.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.log_text.yview)
         
-        # Configure text tags for coloring
+        # 配置文本标签颜色
         self.log_text.tag_configure("info", foreground=Colors.ACCENT_INFO)
         self.log_text.tag_configure("success", foreground=Colors.ACCENT_SUCCESS)
         self.log_text.tag_configure("warning", foreground=Colors.ACCENT_WARNING)
         self.log_text.tag_configure("error", foreground=Colors.ACCENT_ERROR)
     
     def _browse_dataset(self):
-        """Open file dialog to select dataset folder."""
+        """打开文件对话框选择数据集文件夹。"""
         folder = filedialog.askdirectory(
-            title="Select Training Dataset Folder",
+            title="选择训练数据集文件夹",
             initialdir="/"
         )
         if folder:
             self.dataset_path.set(folder)
-            self._log(f"Dataset path set: {folder}", "info")
+            self._log(f"数据集路径已设置: {folder}", "info")
     
     def _start_training(self):
-        """Start the training process."""
-        # Validate inputs
+        """开始训练过程。"""
+        # 验证输入
         if not self.dataset_path.get():
-            messagebox.showwarning("Warning", "Please select a dataset folder.")
+            messagebox.showwarning("警告", "请选择数据集文件夹。")
             return
         
         if not self.model_name.get():
-            messagebox.showwarning("Warning", "Please enter a model name.")
+            messagebox.showwarning("警告", "请输入模型名称。")
             return
         
-        # Update UI state
+        # 更新 UI 状态
         self._is_training = True
         self._is_paused = False
         self.start_btn.configure(state=tk.DISABLED)
         self.pause_btn.configure(state=tk.NORMAL)
         self.stop_btn.configure(state=tk.NORMAL)
-        self.status_var.set("Training...")
+        self.status_var.set("训练中...")
         
-        self._log("Starting training...", "info")
-        self._log(f"Model: {self.model_name.get()}", "info")
-        self._log(f"Dataset: {self.dataset_path.get()}", "info")
-        self._log(f"Epochs: {self.epochs.get()}, Batch: {self.batch_size.get()}", "info")
+        self._log("开始训练...", "info")
+        self._log(f"模型: {self.model_name.get()}", "info")
+        self._log(f"数据集: {self.dataset_path.get()}", "info")
+        self._log(f"轮数: {self.epochs.get()}, 批次: {self.batch_size.get()}", "info")
         
-        # Start training in background thread
+        # 在后台线程中启动训练
         self._training_thread = threading.Thread(target=self._training_worker, daemon=True)
         self._training_thread.start()
     
     def _pause_training(self):
-        """Pause or resume training."""
+        """暂停或继续训练。"""
         self._is_paused = not self._is_paused
         if self._is_paused:
-            self.pause_btn.configure(text="▶ Resume")
-            self.status_var.set("Paused")
-            self._log("Training paused", "warning")
+            self.pause_btn.configure(text="▶ 继续")
+            self.status_var.set("已暂停")
+            self._log("训练已暂停", "warning")
         else:
-            self.pause_btn.configure(text="⏸ Pause")
-            self.status_var.set("Training...")
-            self._log("Training resumed", "info")
+            self.pause_btn.configure(text="⏸ 暂停")
+            self.status_var.set("训练中...")
+            self._log("训练已继续", "info")
     
     def _stop_training(self):
-        """Stop the training process."""
+        """停止训练过程。"""
         self._is_training = False
         self._is_paused = False
         self.start_btn.configure(state=tk.NORMAL)
-        self.pause_btn.configure(state=tk.DISABLED, text="⏸ Pause")
+        self.pause_btn.configure(state=tk.DISABLED, text="⏸ 暂停")
         self.stop_btn.configure(state=tk.DISABLED)
-        self.status_var.set("Stopped")
-        self._log("Training stopped by user", "warning")
+        self.status_var.set("已停止")
+        self._log("训练已被用户停止", "warning")
     
     def _training_worker(self):
-        """Background worker for training (simulated)."""
+        """后台训练工作线程（模拟）。"""
         epochs = self.epochs.get()
         
         for epoch in range(1, epochs + 1):
@@ -310,41 +316,41 @@ class TrainingPage(BasePage):
             if not self._is_training:
                 break
             
-            # Simulate training work
+            # 模拟训练工作
             threading.Event().wait(0.1)
             
-            # Update progress
+            # 更新进度
             progress = (epoch / epochs) * 100
-            loss = 1.0 / epoch  # Simulated decreasing loss
+            loss = 1.0 / epoch  # 模拟递减损失
             
-            # Schedule UI updates on main thread
+            # 在主线程上调度 UI 更新
             self.after(0, self._update_progress, epoch, epochs, progress, loss)
         
         if self._is_training:
             self.after(0, self._training_complete)
     
     def _update_progress(self, epoch: int, total: int, progress: float, loss: float):
-        """Update progress display (called from main thread)."""
+        """更新进度显示（从主线程调用）。"""
         self.progress_var.set(progress)
-        self.epoch_label.configure(text=f"Epoch: {epoch} / {total}")
-        self.loss_label.configure(text=f"Loss: {loss:.4f}")
+        self.epoch_label.configure(text=f"轮次: {epoch} / {total}")
+        self.loss_label.configure(text=f"损失: {loss:.4f}")
         
         if epoch % 10 == 0:
-            self._log(f"Epoch {epoch}/{total} - Loss: {loss:.4f}", "info")
+            self._log(f"轮次 {epoch}/{total} - 损失: {loss:.4f}", "info")
     
     def _training_complete(self):
-        """Handle training completion."""
+        """处理训练完成。"""
         self._is_training = False
         self.start_btn.configure(state=tk.NORMAL)
         self.pause_btn.configure(state=tk.DISABLED)
         self.stop_btn.configure(state=tk.DISABLED)
-        self.status_var.set("Completed")
+        self.status_var.set("已完成")
         self.progress_var.set(100)
-        self._log("Training completed successfully!", "success")
-        self._log(f"Model saved as: {self.model_name.get()}", "success")
+        self._log("训练成功完成！", "success")
+        self._log(f"模型已保存为: {self.model_name.get()}", "success")
     
     def _log(self, message: str, level: str = "info"):
-        """Add a message to the log output."""
+        """向日志输出添加消息。"""
         def _append():
             self.log_text.configure(state=tk.NORMAL)
             self.log_text.insert(tk.END, f"[{level.upper()}] {message}\n", level)

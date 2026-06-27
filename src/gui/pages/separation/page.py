@@ -1,16 +1,19 @@
 """
-SeparationPage - main page class for audio source separation.
+SeparationPage - 音频分离主页面类。
 
-Combines SeparationUIMixin and SeparationWorkerMixin to provide
-the complete separation page functionality.
+组合 SeparationUIMixin 和 SeparationWorkerMixin 提供完整的分离页面功能。
 
-MRO (Method Resolution Order):
-    SeparationPage -> BasePage -> SeparationUIMixin -> SeparationWorkerMixin -> object
-    - BasePage provides: safe_after, _widget_alive, cleanup, on_show, on_hide
-    - SeparationUIMixin provides: _create_widgets, _create_*_section, _browse_*, file info
-    - SeparationWorkerMixin provides: _start_separation, _stop_separation, _separation_worker,
-      _separation_complete, _separation_error, timer, logging
-    - No method name conflicts between mixins (verified).
+MRO（方法解析顺序）:
+    SeparationPage -> SeparationUIMixin -> SeparationWorkerMixin -> BasePage -> object
+    - SeparationUIMixin 提供: _create_widgets, _create_*_section, _browse_*, 文件信息
+    - SeparationWorkerMixin 提供: _start_separation, _stop_separation, _separation_worker,
+      _separation_complete, _separation_error, 计时器, 日志
+    - BasePage 提供: safe_after, _widget_alive, cleanup, on_show, on_hide
+    - Mixin 之间无方法名冲突（已验证）。
+
+Bug 修复:
+    - Bug 1: 所有变量初始化在 super().__init__() 之前（因为 BasePage.__init__ 调用 _create_widgets）
+    - Bug 2: Mixin 类放在 BasePage 前面继承，确保 ABC 抽象方法正确识别
 """
 
 import tkinter as tk
@@ -25,26 +28,27 @@ from .ui_mixin import SeparationUIMixin
 from .worker_mixin import SeparationWorkerMixin
 
 
-# MRO: SeparationPage -> BasePage -> SeparationUIMixin -> SeparationWorkerMixin -> object
-class SeparationPage(BasePage, SeparationUIMixin, SeparationWorkerMixin):
+# Bug 2 修复：Mixin 类放在 BasePage 前面，确保 ABC 抽象方法已实现
+# MRO: SeparationPage -> SeparationUIMixin -> SeparationWorkerMixin -> BasePage -> object
+class SeparationPage(SeparationUIMixin, SeparationWorkerMixin, BasePage):
     """
-    Separation page for audio source separation.
+    音频分离页面。
 
-    Features:
-    - Source audio selection with file info display and drop zone
-    - Separation mode: 2-stem, 4-stem, HPSS, Dereverb
-    - Backend selection: librosa (default), demucs, HPSS
-    - Dereverb toggle
-    - Output format: wav, mp3, flac
-    - Output directory selection with directory memory
-    - Progress bar with status text and elapsed time
-    - Completion dialog with open folder button
-    - Friendly error handling
+    功能:
+    - 源音频选择，带文件信息显示和拖放区域
+    - 分离模式: 2-stem, 4-stem, HPSS, 去混响
+    - 后端选择: librosa (默认), demucs, HPSS
+    - 去混响开关
+    - 输出格式: wav, mp3, flac
+    - 输出目录选择，带目录记忆
+    - 进度条，带状态文字和耗时显示
+    - 完成对话框，带打开文件夹按钮
+    - 友好的错误处理
     """
 
-    PAGE_NAME = "Separation"
+    PAGE_NAME = "声源分离"
     PAGE_ICON = "\U0001f3bc"
-    PAGE_DESCRIPTION = "Separate audio tracks"
+    PAGE_DESCRIPTION = "分离音频轨道"
 
     # Separation modes
     MODES = {
@@ -69,74 +73,65 @@ class SeparationPage(BasePage, SeparationUIMixin, SeparationWorkerMixin):
     }
 
     def __init__(self, parent: tk.Widget, app: Optional[object] = None):
-        """Initialize the separation page.
+        """初始化分离页面。
 
-        Cross-Mixin Attribute Contract:
-        ================================
-        All attributes below are shared between Mixins. Each Mixin reads/writes
-        these attributes. This section serves as the contract between Mixins.
-
-        UI Mixin reads/writes:
-            - source_path, output_dir, separation_mode, backend, dereverb_enabled,
-              output_format (Tkinter variables for UI controls)
-            - progress_var, status_var, elapsed_var (progress display)
-            - file_info_* (file info display variables)
-            - _last_directory (remembered directory for file dialogs)
-
-        Worker Mixin reads/writes:
-            - _cancel_event (cancel signal, threading.Event)
-            - _processing_thread (background thread reference)
-            - _start_time, _elapsed_timer_id (elapsed time tracking)
-            - source_path, output_dir, separation_mode, backend, dereverb_enabled,
-              output_format (read parameters for separation)
-            - progress_var, status_var, elapsed_var (update progress display)
-            - _last_directory (save directory preference)
-
-        BasePage reads/writes:
-            - _cleaned_up (idempotent cleanup flag)
+        Bug 1 修复: 所有变量初始化必须在 super().__init__() 之前，
+        因为 BasePage.__init__() 会调用 _create_widgets()
         """
-        super().__init__(parent, app)
+        # ============================================================
+        # Bug 1 修复：所有变量初始化必须在 super().__init__() 之前
+        # ============================================================
 
-        # ---- Settings manager (singleton, thread-safe) ----
+        # ---- 设置管理器（单例，线程安全）----
         self._settings = SettingsManager()
 
-        # ---- Cancel event (threading.Event for unified cancel mechanism) ----
-        # Used by: WorkerMixin (set/clear), UI (check for stop button state)
+        # ---- 取消事件（threading.Event，统一取消机制）----
         self._cancel_event = threading.Event()
 
-        # ---- Processing state ----
-        # Used by: WorkerMixin (thread management), UI (button enable/disable)
+        # ---- 处理状态 ----
         self._processing_thread: Optional[threading.Thread] = None
         self._start_time: Optional[float] = None
         self._elapsed_timer_id: Optional[str] = None
 
-        # ---- Tkinter variables (UI <-> Worker communication) ----
-        # Source/output paths
+        # ---- Tkinter 变量（UI <-> Worker 通信）----
+        # 源/输出路径
         self.source_path = tk.StringVar()
         self.output_dir = tk.StringVar()
 
-        # Separation parameters
-        self.separation_mode = tk.StringVar(value="2-stem (Vocals + Accompaniment)")
+        # 分离参数
+        self.separation_mode = tk.StringVar(value="2-stem (人声 + 伴奏)")
         self.backend = tk.StringVar(value="librosa")
         self.dereverb_enabled = tk.BooleanVar(value=False)
         self.output_format = tk.StringVar(value="WAV")
 
-        # Progress display
+        # 进度显示
         self.progress_var = tk.DoubleVar(value=0)
-        self.status_var = tk.StringVar(value="Ready")
+        self.status_var = tk.StringVar(value="就绪")
         self.elapsed_var = tk.StringVar(value="")
 
-        # File info variables
+        # 文件信息变量
         self.file_info_duration = tk.StringVar(value="--")
         self.file_info_samplerate = tk.StringVar(value="--")
         self.file_info_channels = tk.StringVar(value="--")
         self.file_info_filesize = tk.StringVar(value="--")
-        self.file_info_filename = tk.StringVar(value="No file selected")
+        self.file_info_filename = tk.StringVar(value="未选择文件")
 
-        # ---- Remembered last directory (from SettingsManager) ----
+        # ---- 目录记忆 ----
         self._last_directory = self._settings.get(
             "separation_last_dir", os.path.expanduser("~")
         )
 
-        # Output files
+        # 输出文件
         self._output_files: List[str] = []
+
+        # 输出文件路径（完成后设置）
+        self._output_file_path: Optional[str] = None
+
+        # 文件信息加载状态
+        self._file_info_loading = False
+
+        # 后端描述标签（延迟引用）
+        self._backend_desc_label = None
+
+        # 现在调用 super().__init__()，它会调用 _create_widgets()
+        super().__init__(parent, app)
