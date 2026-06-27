@@ -4,7 +4,7 @@ SOMA Audio AI Unified Exception Hierarchy
 Provides consistent exception hierarchy for error handling and debugging.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 
 class SOMAError(Exception):
@@ -109,7 +109,7 @@ class SOMAValidationError(SOMAError, ValueError):
     def __init__(
         self,
         param_name: str,
-        value: any,
+        value: Any,
         message: Optional[str] = None,
         constraints: Optional[dict] = None,
     ):

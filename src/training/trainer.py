@@ -57,6 +57,11 @@ class MultiPeriodDiscriminator:
         self.device = device
         self.discriminators = nn.ModuleList()
 
+        # Validate periods structure - ensure each period group has at least one value
+        for i, period_group in enumerate(periods):
+            if not period_group or len(period_group) == 0:
+                raise ValueError(f"Period group at index {i} is empty. Each group must have at least one period value.")
+
         for period_group in periods:
             self.discriminators.append(
                 self._build_sub_discriminator(period_group[0])

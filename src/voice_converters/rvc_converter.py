@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -104,10 +105,15 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         self._f0_cache: OrderedDict[str, np.ndarray] = OrderedDict()
         self._cache_max_size = 10
         
+        # Thread safety locks
+        self._import_lock = threading.Lock()
+        self._cache_lock = threading.Lock()
+        
         # Lazy import status
         self._has_librosa = False
         self._has_transformers = False
         self._has_torchaudio = False
+        self._has_crepe = False
         
         # Model path (set during load_model)
         self._model_path = None
@@ -132,55 +138,54 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         return self.device
 
     def _lazy_import_module(self, name: str):
-        """Lazy import module"""
-        if name == "torch":
-            if self._torch is None:
-                import torch
-                self._torch = torch
-            return self._torch
-        elif name == "librosa":
-            if self._librosa is None:
-                try:
-                    import librosa
-                    self._librosa = librosa
-                    self._has_librosa = True
-                except ImportError:
-                    self._has_librosa = False
-                    return None
-            return self._librosa
-        elif name == "transformers":
-            if self._transformers is None:
-                try:
-                    from transformers import HubertModel, Wav2Vec2FeatureExtractor
-                    self._transformers = (HubertModel, Wav2Vec2FeatureExtractor)
-                    self._has_transformers = True
-                except ImportError:
-                    self._has_transformers = False
-                    return None
-            return self._transformers
-        elif name == "torchaudio":
-            if self._torchaudio is None:
-                try:
-                    import torchaudio
-                    self._torchaudio = torchaudio
-                    self._has_torchaudio = True
-                except ImportError:
-                    self._has_torchaudio = False
-                    return None
-            return self._torchaudio
-        elif name == "crepe":
-            if not hasattr(self, '_crepe'):
-                self._crepe = None
-            if self._crepe is None:
-                try:
-                    import crepe
-                    self._crepe = crepe
-                    self._has_crepe = True
-                except ImportError:
-                    self._has_crepe = False
-                    return None
-            return self._crepe
-        return None
+        """Lazy import module with thread safety"""
+        with self._import_lock:
+            if name == "torch":
+                if self._torch is None:
+                    import torch
+                    self._torch = torch
+                return self._torch
+            elif name == "librosa":
+                if self._librosa is None:
+                    try:
+                        import librosa
+                        self._librosa = librosa
+                        self._has_librosa = True
+                    except ImportError:
+                        self._has_librosa = False
+                        return None
+                return self._librosa
+            elif name == "transformers":
+                if self._transformers is None:
+                    try:
+                        from transformers import HubertModel, Wav2Vec2FeatureExtractor
+                        self._transformers = (HubertModel, Wav2Vec2FeatureExtractor)
+                        self._has_transformers = True
+                    except ImportError:
+                        self._has_transformers = False
+                        return None
+                return self._transformers
+            elif name == "torchaudio":
+                if self._torchaudio is None:
+                    try:
+                        import torchaudio
+                        self._torchaudio = torchaudio
+                        self._has_torchaudio = True
+                    except ImportError:
+                        self._has_torchaudio = False
+                        return None
+                return self._torchaudio
+            elif name == "crepe":
+                if self._crepe is None:
+                    try:
+                        import crepe
+                        self._crepe = crepe
+                        self._has_crepe = True
+                    except ImportError:
+                        self._has_crepe = False
+                        return None
+                return self._crepe
+            return None
 
     @classmethod
     def is_available(cls) -> bool:
@@ -307,8 +312,9 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         self._pe_model = None
         self._ap_model = None
         self._is_loaded = False
-        self._hubert_cache.clear()
-        self._f0_cache.clear()
+        with self._cache_lock:
+            self._hubert_cache.clear()
+            self._f0_cache.clear()
 
         # Cleanup GPU Cache
         try:
@@ -520,11 +526,12 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         hop_length = self.hop_length
         n_frames = (len(audio) - 2048) // hop_length + 1
 
-        # CheckCache
+        # Check cache with thread safety
         cache_key = f"{len(audio)}_{sample_rate}"
-        if cache_key in self._f0_cache:
-            self._f0_cache.move_to_end(cache_key)
-            return self._f0_cache[cache_key]
+        with self._cache_lock:
+            if cache_key in self._f0_cache:
+                self._f0_cache.move_to_end(cache_key)
+                return self._f0_cache[cache_key].copy()
 
         # Try different F0 extraction methods
         methods = [
@@ -540,20 +547,22 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
                 if f0 is not None and len(f0) > 0:
                     # Ensure length is correct
                     f0 = self._align_f0_length(f0, n_frames)
-                    # Cache (LRU eviction)
-                    self._f0_cache[cache_key] = f0
-                    if len(self._f0_cache) > self._cache_max_size:
-                        self._f0_cache.popitem(last=False)
+                    # Cache with thread safety (LRU eviction)
+                    with self._cache_lock:
+                        self._f0_cache[cache_key] = f0
+                        if len(self._f0_cache) > self._cache_max_size:
+                            self._f0_cache.popitem(last=False)
                     return f0
             except Exception:
                 continue
 
         # Downgrade method: use autocorrelation
         f0 = self._extract_f0_autocorr(audio, sample_rate, hop_length, n_frames)
-        # Cache (LRU eviction)
-        self._f0_cache[cache_key] = f0
-        if len(self._f0_cache) > self._cache_max_size:
-            self._f0_cache.popitem(last=False)
+        # Cache with thread safety (LRU eviction)
+        with self._cache_lock:
+            self._f0_cache[cache_key] = f0
+            if len(self._f0_cache) > self._cache_max_size:
+                self._f0_cache.popitem(last=False)
         return f0
 
     def _extract_f0_harvest(
@@ -773,12 +782,13 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
         Returns:
             FeatureMatrix [dim, n_frames]
         """
-        # CheckCache
+        # Check cache with thread safety
         cache_key = f"{len(audio)}_{sample_rate}"
-        if cache_key in self._hubert_cache:
-            # Move to end (recently used)
-            self._hubert_cache.move_to_end(cache_key)
-            return self._hubert_cache[cache_key]
+        with self._cache_lock:
+            if cache_key in self._hubert_cache:
+                # Move to end (recently used)
+                self._hubert_cache.move_to_end(cache_key)
+                return self._hubert_cache[cache_key].copy()
 
         # Try HubERT
         features = self._extract_hubert_deep(audio, sample_rate)
@@ -787,10 +797,11 @@ class RVCConverter(BaseVoiceConverter, EngineCapability):
             # Fallback to MFCC
             features = self._extract_mfcc_features_fallback(audio, sample_rate)
 
-        # Cache (LRU eviction)
-        self._hubert_cache[cache_key] = features
-        if len(self._hubert_cache) > self._cache_max_size:
-            self._hubert_cache.popitem(last=False)
+        # Cache with thread safety (LRU eviction)
+        with self._cache_lock:
+            self._hubert_cache[cache_key] = features
+            if len(self._hubert_cache) > self._cache_max_size:
+                self._hubert_cache.popitem(last=False)
 
         return features
 

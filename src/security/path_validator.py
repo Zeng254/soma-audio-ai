@@ -107,35 +107,26 @@ class PathValidator:
 
         path_str = str(path)
 
-        # 2. Check path traversal attack (use normpath to normalize then check .. components)
-        normalized = os.path.normpath(path_str)
-        if '..' in Path(normalized).parts:
+        # 2. Check UNC path (Windows attack vector)
+        path_str = str(path)
+        if path_str.startswith('\\\\') or path_str.startswith('//'):
             raise PathTraversalError(
                 attempted_path=path_str,
                 allowed_base=None,
             )
 
-        # 3. Check UNC path (Windows attack vector)
-        if normalized.startswith('\\\\') or normalized.startswith('//'):
-            raise PathTraversalError(
-                attempted_path=path_str,
-                allowed_base=None,
-            )
-
-        # 4. Convert to absolute path and normalize
-        # Always resolve the path regardless of whether it exists
-        # This prevents bypass attempts using non-existent paths
+        # 3. Convert to absolute path and normalize
+        # Always resolve to get the canonical path
+        # For non-existent paths, resolve() still normalizes the path
         path_obj = Path(path)
         try:
-            # Always resolve to get the canonical path
-            # For non-existent paths, resolve() still normalizes the path
             resolved = path_obj.expanduser().resolve()
         except (OSError, RuntimeError) as e:
             raise ValueError(f"Cannot resolve path: {path} - {e}")
 
-        # 5. Check normalized path again for traversal attempts
-        normalized_resolved = os.path.normpath(str(resolved))
-        if '..' in Path(normalized_resolved).parts:
+        # 4. Check resolved path for traversal attempts
+        # This single check after resolve() is sufficient since resolve() normalizes the path
+        if '..' in resolved.parts:
             raise PathTraversalError(
                 attempted_path=str(resolved),
                 allowed_base=None,

@@ -270,6 +270,7 @@ class AudioPipeline:
         audio: np.ndarray,
         sample_rate: Optional[int] = None,
         return_tracks: bool = False,
+        fail_fast: bool = False,
     ) -> PipelineResult:
         """
         Execute pipeline
@@ -278,9 +279,14 @@ class AudioPipeline:
             audio: Input audio
             sample_rate: Sample rate
             return_tracks: Whether to return all tracks
+            fail_fast: If True, raise exception immediately when a node fails.
+                      If False (default), continue execution and record failures.
             
         Returns:
             PipelineResult: Execution result
+            
+        Raises:
+            RuntimeError: If fail_fast=True and a node fails
         """
         if sample_rate is None:
             sample_rate = self.default_sample_rate
@@ -317,6 +323,12 @@ class AudioPipeline:
                 node_times[node.name] = time.time() - node_start
                 # P2-11: Record failure information for downstream detection
                 node_failures[node.name] = f"{type(e).__name__}: {str(e)}"
+                
+                # P1-4: Fail-fast mode - raise immediately
+                if fail_fast:
+                    raise RuntimeError(
+                        f"Pipeline node '{node.name}' failed: {e}"
+                    ) from e
         
         total_time = time.time() - start_time
         

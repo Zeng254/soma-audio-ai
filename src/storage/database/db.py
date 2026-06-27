@@ -53,8 +53,8 @@ def _create_engine_with_retry():
     if url is None or url == "":
         logger.error("PGDATABASE_URL is not set")
         raise ValueError("PGDATABASE_URL is not set")
-    size = 100
-    overflow = 100
+    size = 10
+    overflow = 20
     recycle = 1800
     timeout = 30
     engine = create_engine(

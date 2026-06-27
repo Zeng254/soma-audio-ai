@@ -507,7 +507,23 @@ async def http_stream_run(request: Request):
             run_opt=RunOpt(workflow_debug=workflow_debug),
         )
 
-    response = StreamingResponse(stream_generator, media_type="text/event-stream")
+    # Wrap generator to detect client disconnection and cleanup resources
+    async def disconnect_aware_generator():
+        try:
+            async for chunk in stream_generator:
+                # Check if client has disconnected
+                if await request.is_disconnected():
+                    logger.info(f"Client disconnected during stream, run_id={run_id}")
+                    # Cancel the running task
+                    service.cancel_run(run_id, ctx)
+                    break
+                yield chunk
+        except asyncio.CancelledError:
+            logger.info(f"Stream cancelled, run_id={run_id}")
+            service.cancel_run(run_id, ctx)
+            raise
+
+    response = StreamingResponse(disconnect_aware_generator(), media_type="text/event-stream")
     return response
 
 @app.post("/cancel/{run_id}")

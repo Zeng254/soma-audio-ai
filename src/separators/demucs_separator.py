@@ -7,6 +7,7 @@ Supports vocals/accompaniment/drums/bass and other 4-track separation.
 from typing import Optional, Dict, Any
 from pathlib import Path
 import numpy as np
+import threading
 
 from src.separators.base import BaseSeparator, SeparationResult
 from src.utils.audio_io import AudioLoader
@@ -56,10 +57,19 @@ class DemucsSeparator(BaseSeparator):
         self.progress = progress
         self._model = None
         self._demucs = None
+        self._model_lock = threading.Lock()
 
     def _load_model(self):
-        """DelayLoad Demucs Model"""
-        if self._model is None:
+        """DelayLoad Demucs Model (thread-safe)"""
+        # Fast path: already loaded
+        if self._model is not None:
+            return
+
+        with self._model_lock:
+            # Double-check after acquiring lock
+            if self._model is not None:
+                return
+
             try:
                 from demucs import pretrained
                 from demucs.pretrained import get_model
