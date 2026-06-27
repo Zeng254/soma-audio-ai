@@ -39,6 +39,7 @@ class DataConfig:
     supported_formats: List[str] = field(
         default_factory=lambda: ["wav", "mp3", "flac", "ogg", "m4a"]
     )
+    cache_in_memory: bool = False  # Cache loaded audio segments in memory to reduce I/O
 
     def validate(self) -> List[str]:
         """Validate configuration parameters. Returns list of error messages."""
