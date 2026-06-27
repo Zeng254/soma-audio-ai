@@ -67,9 +67,9 @@ class InferenceUIMixin:
 
     # Quality presets (for backward compatibility)
     QUALITY_PRESETS = {
-        "Standard": {"sample_rate": "40000", "description": "Good quality, faster"},
-        "High": {"sample_rate": "44100", "description": "Better quality, moderate speed"},
-        "Best": {"sample_rate": "48000", "description": "Highest quality, slower"},
+        "标准": {"sample_rate": "40000", "description": "音质良好，速度较快"},
+        "高质量": {"sample_rate": "44100", "description": "音质更好，速度适中"},
+        "最佳": {"sample_rate": "48000", "description": "最高音质，速度较慢"},
     }
 
     def _create_widgets(self):
@@ -77,8 +77,8 @@ class InferenceUIMixin:
         # Title section
         self.create_title_section(
             self.content_frame,
-            "Song Cover Generation",
-            "Convert audio using trained voice models"
+            "歌曲翻唱",
+            "使用训练好的声音模型转换音频"
         )
 
         # Main content area with two columns
@@ -217,7 +217,7 @@ class InferenceUIMixin:
             buttonbackground=Colors.BG_TERTIARY, width=6
         )
         pitch_spinbox.pack(side=tk.LEFT)
-        ttk.Label(pitch_frame, text="semitones (-12 to +12)", style="Muted.TLabel").pack(
+        ttk.Label(pitch_frame, text="半音 (-12 到 +12)", style="Muted.TLabel").pack(
             side=tk.LEFT, padx=(10, 0)
         )
 
@@ -446,7 +446,7 @@ class InferenceUIMixin:
     def _browse_source(self):
         """Open file dialog to select source audio."""
         filename = filedialog.askopenfilename(
-            title="Select Source Audio",
+            title="选择源音频",
             filetypes=AUDIO_FILETYPES,
             initialdir=self._last_directory,
         )
@@ -470,7 +470,7 @@ class InferenceUIMixin:
         ]
 
         filename = filedialog.asksaveasfilename(
-            title="Save Output Audio",
+            title="保存输出音频",
             filetypes=filetypes,
             defaultextension=".wav",
             initialdir=self._last_directory,

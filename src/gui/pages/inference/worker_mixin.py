@@ -193,8 +193,8 @@ class InferenceWorkerMixin:
 
             if model_path is None:
                 raise FileNotFoundError(
-                    f"Model '{model_name}' not found. "
-                    "Please place .pth model files in ~/.soma/models/ or assets/models/"
+                    f"未找到模型 '{model_name}'。"
+                    "请将 .pth 模型文件放在 ~/.soma/models/ 或 assets/models/ 目录中"
                 )
 
             output_sr = int(self.output_sample_rate.get())
@@ -288,7 +288,7 @@ class InferenceWorkerMixin:
             self.safe_after(0, self._conversion_complete)
 
         except ImportError as e:
-            err_msg = f"Missing dependency: {e}"
+            err_msg = f"缺少依赖: {e}"
             self.safe_after(0, lambda: self._log(f"ERROR: {err_msg}"))
             self.safe_after(0, lambda: self.status_var.set("Error"))
             self.safe_after(0, self._conversion_error)
@@ -315,10 +315,10 @@ class InferenceWorkerMixin:
         # Show completion dialog
         output_dir = os.path.dirname(self.output_path.get())
         result = messagebox.askyesno(
-            "Conversion Complete",
-            f"Voice conversion completed successfully!\n\n"
+            "转换完成",
+            f"声音转换已成功完成！\n\n"
             f"Output saved to:\n{self.output_path.get()}\n\n"
-            f"Open output folder?"
+            f"打开输出文件夹？"
         )
         if result and output_dir:
             open_folder(output_dir)
@@ -328,8 +328,8 @@ class InferenceWorkerMixin:
         self._reset_ui_after_processing("Error")
 
         messagebox.showerror(
-            "Conversion Failed",
-            "Voice conversion failed.\n\n"
-            "Please check the log for details.\n"
-            "Common issues: missing dependencies, model not found, or insufficient memory."
+            "转换失败",
+            "声音转换失败。\n\n"
+            "请查看日志了解详情。\n"
+            "常见问题：缺少依赖、未找到模型或内存不足。"
         )

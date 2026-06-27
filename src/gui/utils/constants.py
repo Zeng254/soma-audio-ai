@@ -31,13 +31,13 @@ STATUS_DISPLAY = {
 }
 
 # UI status text constants (fix #5)
-STATUS_READY = "Ready"
-STATUS_STARTING = "Starting..."
-STATUS_LOADING_MODEL = "Loading model..."
-STATUS_LOADING_AUDIO = "Loading audio..."
-STATUS_PROCESSING = "Processing..."
-STATUS_SAVING = "Saving..."
-STATUS_COMPLETED = "Completed"
+STATUS_READY = "就绪"
+STATUS_STARTING = "正在启动..."
+STATUS_LOADING_MODEL = "正在加载模型..."
+STATUS_LOADING_AUDIO = "正在加载音频..."
+STATUS_PROCESSING = "正在处理..."
+STATUS_SAVING = "正在保存..."
+STATUS_COMPLETED = "已完成"
 STATUS_ERROR = "Error"
 STATUS_CANCELLED_UI = "Cancelled"
 
@@ -89,9 +89,9 @@ FEATURE_EXTRACTORS = {
 # F0 extraction methods: name -> description
 F0_METHODS = {
     "dio": "DIO (fast, default)",
-    "harvest": "Harvest (better quality, slower)",
-    "rmvpe": "RMVPE (deep learning, best quality)",
-    "crepe": "Crepe (neural pitch, high quality)",
+    "harvest": "Harvest (音质更好，速度较慢)",
+    "rmvpe": "RMVPE (深度学习，最佳音质)",
+    "crepe": "Crepe (神经网络，高质量)",
 }
 
 # Device options: name -> description
@@ -135,9 +135,9 @@ AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac"}
 
 # Audio file dialog filter patterns
 AUDIO_FILETYPES = [
-    ("Audio files", "*.wav *.mp3 *.flac *.ogg *.m4a *.aac"),
+    ("音频文件", "*.wav *.mp3 *.flac *.ogg *.m4a *.aac"),
     ("WAV files", "*.wav"),
     ("MP3 files", "*.mp3"),
     ("FLAC files", "*.flac"),
-    ("All files", "*.*"),
+    ("所有文件", "*.*"),
 ]
