@@ -32,7 +32,12 @@ block_cipher = None
 # Project Configuration
 # ============================================================================
 
-project_root = Path(__file__).parent
+# Get project root - __file__ may not be defined in some contexts
+try:
+    project_root = Path(__file__).parent
+except NameError:
+    project_root = Path(os.path.abspath('.'))
+
 src_dir = project_root / "src"
 
 # Application info
