@@ -1,178 +1,291 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller 打包配置文件 for SOMA
+SOMA AI Workstation - PyInstaller Build Configuration
 
-使用方法:
-    pyinstaller soma.spec              # 打包
-    pyinstaller soma.spec --clean       # 清理后重新打包
-    pyinstaller soma.spec --onedir      # 打包为目录
-    pyinstaller soma.spec --onefile     # 打包为单文件
+Build commands:
+    pyinstaller soma.spec                  # Build (incremental)
+    pyinstaller soma.spec --clean          # Clean build
+    pyinstaller soma.spec --noconfirm      # Overwrite without asking
 
-Windows 用户:
-    使用 pyinstaller soma.spec
-    打包完成后在 dist/ 目录下会生成 soma.exe
+Output:
+    dist/SOMA/          # Directory mode (default)
+    dist/SOMA.exe       # Single file mode (set ONE_FILE=True below)
 
-Linux/macOS 用户:
-    使用 pyinstaller soma.spec
-    打包完成后在 dist/ 目录下会生成 soma 可执行文件
+Final package:
+    dist/SOMA-v0.1.0-win64.zip
 """
 
 import sys
 import os
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_data_files
-
 block_cipher = None
 
 # ============================================================================
-# 项目配置
+# Project Configuration
 # ============================================================================
 
 project_root = Path(__file__).parent
 src_dir = project_root / "src"
 
-# 应用信息
+# Application info
 APP_NAME = "SOMA"
 APP_VERSION = "0.1.0"
-APP_DESCRIPTION = "AI驱动的音频处理工作站"
+APP_DESCRIPTION = "SOMA AI Audio Workstation"
 APP_AUTHOR = "SOMA Team"
 
-# 打包类型: onedir (目录) 或 onefile (单文件)
-ONE_FILE = False  # 设为 True 打包为单文件
+# Build mode: False = directory (recommended), True = single file
+ONE_FILE = False
 
 # ============================================================================
-# 隐藏导入 (Hidden Imports)
-# 所有在运行时动态导入的模块都需要在这里声明
+# Hidden Imports
 # ============================================================================
 
 hiddenimports = [
-    # PyQt6 核心
-    'PyQt6',
-    'PyQt6.QtCore',
-    'PyQt6.QtGui',
-    'PyQt6.QtWidgets',
-    'PyQt6.sip',
+    # --- GUI (tkinter is built-in, but we need to ensure it's included) ---
+    'tkinter',
+    'tkinter.ttk',
+    'tkinter.filedialog',
+    'tkinter.messagebox',
+    'tkinter.colorchooser',
+    'tkinter.font',
 
-    # 音频处理
-    'torch',
-    'torch.cuda',
-    'torch.nn',
-    'torch.nn.functional',
-    'librosa',
-    'librosa.core',
-    'librosa.output',
-    'soundfile',
+    # --- Audio Processing ---
+    'numpy',
     'scipy',
     'scipy.signal',
-    'numpy',
+    'scipy.fft',
+    'scipy.io',
+    'soundfile',
+    'librosa',
+    'librosa.core',
+    'librosa.feature',
+    'librosa.effects',
+    'pydub',
 
-    # 模型相关
-    'fairseq',
-    'pyworld',
-    
-    # 语音转换器（voice_converters）
-    'src.voice_converters.base',
-    'src.voice_converters.factory',
-    'src.voice_converters.rvc_converter',
-    'src.voice_converters.sovits_converter',
-    'src.voice_converters.diffusion_converter',
+    # --- PyTorch (CPU-only for smaller package) ---
+    'torch',
+    'torch.nn',
+    'torch.nn.functional',
+    'torch.optim',
+    'torch.utils',
+    'torch.utils.data',
+    'torchaudio',
 
-    # 配置和工具
-    'yaml',
-    'json',
-    'logging',
-    'pathlib',
-    'threading',
-    'queue',
-
-    # GUI 组件
-    'gui.main_window',
-    'gui.components.audio_input_panel',
-    'gui.components.model_config_panel',
-    'gui.components.output_panel',
-    'gui.components.status_bar',
-    'gui.workers.conversion_worker',
-    'gui.styles.dark_theme',
-
-    # 核心模块
+    # --- SOMA Core Modules ---
+    'src',
     'src.exceptions',
+    'src.config',
     'src.config.config',
     'src.config.defaults',
+
+    # --- Security ---
+    'src.security',
     'src.security.path_validator',
     'src.security.audio_validator',
     'src.security.model_loader',
+
+    # --- Audio Processing ---
+    'src.utils',
+    'src.utils.audio',
+    'src.utils.audio.validation',
     'src.utils.audio_io',
-    'src.utils.validator',
+    'src.utils.file',
+    'src.utils.file.file',
+    'src.utils.file.file_utils',
     'src.utils.logger',
+    'src.utils.validator',
+
+    # --- Separators ---
+    'src.separators',
     'src.separators.base',
+    'src.separators.audio_separator',
     'src.separators.demucs_separator',
     'src.separators.msst_separator',
+
+    # --- Effects ---
+    'src.effects',
     'src.effects.base',
     'src.effects.eq',
     'src.effects.reverb',
     'src.effects.pitch',
-    'src.converters.converter',
+
+    # --- Voice Converters ---
+    'src.voice_converters',
     'src.voice_converters.base',
     'src.voice_converters.factory',
     'src.voice_converters.rvc_converter',
+    'src.voice_converters.rvc_models',
     'src.voice_converters.sovits_converter',
+    'src.voice_converters.sovits_models',
+
+    # --- Converters ---
+    'src.converters',
+    'src.converters.converter',
+
+    # --- Pipeline ---
+    'src.pipeline',
     'src.pipeline.pipeline',
+
+    # --- Training ---
+    'src.training',
+    'src.training.config',
+    'src.training.dataset',
+    'src.training.feature_extractor',
+    'src.training.inference',
+    'src.training.preprocess',
+    'src.training.trainer',
+    'src.training.cover_pipeline',
+    'src.training.cli',
+
+    # --- Storage ---
+    'src.storage',
+    'src.storage.database',
+    'src.storage.database.db',
+    'src.storage.database.shared',
+    'src.storage.database.shared.model',
+    'src.storage.memory',
+    'src.storage.memory.memory_saver',
+
+    # --- GUI ---
+    'gui',
+    'gui.app',
+    'gui.main',
+    'gui.styles',
+    'gui.pages',
+    'gui.pages.base',
+    'gui.pages.dashboard',
+    'gui.pages.training',
+    'gui.pages.models',
+    'gui.pages.settings',
+    'gui.widgets',
+    'gui.widgets.navigation',
+    'gui.utils',
+    'gui.utils.constants',
+    'gui.utils.common',
+    'gui.utils.settings_manager',
+
+    # --- GUI Pages (Package structure) ---
+    'gui.pages.separation',
+    'gui.pages.separation.page',
+    'gui.pages.separation.ui_mixin',
+    'gui.pages.separation.worker_mixin',
+    'gui.pages.inference',
+    'gui.pages.inference.page',
+    'gui.pages.inference.ui_mixin',
+    'gui.pages.inference.worker_mixin',
+    'gui.pages.comparison',
+    'gui.pages.comparison.page',
+    'gui.pages.comparison.ui_mixin',
+    'gui.pages.comparison.worker_mixin',
+    'gui.pages.comparison.playback_mixin',
+
+    # --- Third-party ---
+    'yaml',
+    'pydantic',
+    'PIL',
+    'PIL.Image',
 ]
 
 # ============================================================================
-# 数据文件 (Data Files)
+# Data Files
 # ============================================================================
 
-datas = [
-    # 配置文件
-    (str(project_root / 'config'), 'config'),
-]
+datas = []
+
+# Include any config files if they exist
+config_dir = project_root / 'config'
+if config_dir.exists():
+    datas.append((str(config_dir), 'config'))
+
+# Include assets if they exist
+assets_dir = project_root / 'assets'
+if assets_dir.exists():
+    datas.append((str(assets_dir), 'assets'))
 
 # ============================================================================
-# 收集第三方库的数据文件
-# ============================================================================
-
-# PyInstaller 4.x 使用 collect_data_files
-try:
-    # PyTorch
-    torch_datas, torch_binaries, torch_redirected_binaries_neg_whitelist = collect_all('torch')
-    datas += torch_datas
-    hiddenimports += ['torch.' + m for m in collect_submodules('torch')]
-
-    # NumPy
-    numpy_datas, numpy_binaries, numpy_redirected_binaries_neg_whitelist = collect_all('numpy')
-    datas += numpy_datas
-    hiddenimports += ['numpy.' + m for m in collect_submodules('numpy')]
-
-except Exception as e:
-    print(f"Warning: Could not collect all data files: {e}")
-
-# ============================================================================
-# 排除模块 (Excludes)
+# Excludes (reduce package size)
 # ============================================================================
 
 excludes = [
-    'tkinter',
-    'matplotlib',
+    # Testing
+    'pytest',
+    'pytest_asyncio',
+    'pytest_mock',
+    'unittest',
+    'test',
+    'tests',
+
+    # Development
+    'black',
+    'ruff',
+    'pylint',
+    'mypy',
+
+    # Jupyter/IPython
     'IPython',
     'notebook',
     'jupyter',
-    'test',
-    'tests',
-    'pytest',
+    'ipykernel',
+
+    # Web frameworks (not needed for desktop)
+    'django',
+    'flask',
+
+    # Database drivers (not needed for desktop)
+    'psycopg2',
+    'psycopg',
+    'boto3',
+    'botocore',
+
+    # Document processing (not needed)
+    'pypdf',
+    'docx2python',
+    'openpyxl',
+    'python_pptx',
+
+    # LLM/AI frameworks (not needed for desktop)
+    'langchain',
+    'langchain_openai',
+    'langgraph',
+    'langsmith',
+    'cozeloop',
+    'coze_coding_utils',
+    'coze_workload_identity',
+    'coze_coding_dev_sdk',
+
+    # Other unused
+    'matplotlib',
+    'cv2',
+    'pandas',
+    'alembic',
+    'SQLAlchemy',
+    'fastapi',
+    'uvicorn',
+    'Jinja2',
+    'rich',
+    'chardet',
+    'ffmpeg_python',
+    'psutil',
+    'python_dotenv',
+    'pyyaml',
+
+    # Virtual environment
     'venv',
     '.venv',
     '__pycache__',
 ]
 
 # ============================================================================
-# PyInstaller 选项
+# Analysis
 # ============================================================================
 
 a = Analysis(
-    ['gui/main_window.py'],  # 入口文件
-    pathex=[str(project_root)],
+    ['launcher.py'],
+    pathex=[
+        str(project_root),
+        str(src_dir),
+    ],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -186,66 +299,47 @@ a = Analysis(
     noarchive=False,
 )
 
+# ============================================================================
+# PYZ (Python Archive)
+# ============================================================================
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-if ONE_FILE:
-    # 单文件打包
-    exe = EXE(
-        pyz,
-        a.scripts,
-        [],
-        exclude_binaries=True,
-        name=APP_NAME,
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=True,
-        console=False,  # GUI 程序不显示控制台
-        disable_windowed_traceback=False,
-        argv_emulation=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-        icon=None,  # 可以添加图标: icon='assets/icon.ico'
-        version='version_info.txt',  # Windows 版本信息
-    )
-    coll = COLLECT(
-        exe,
-        a.binaries + a.zipfiles,
-        a.datas,
-        strip=False,
-        upx=True,
-        upx_exclude=[],
-        name=APP_NAME,
-    )
-else:
-    # 目录打包 (推荐)
-    exe = EXE(
-        pyz,
-        a.scripts,
-        [],
-        exclude_binaries=True,
-        name=APP_NAME,
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=True,
-        console=False,
-        disable_windowed_traceback=False,
-        argv_emulation=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-        icon=None,
-    )
+# ============================================================================
+# EXE
+# ============================================================================
 
-    coll = COLLECT(
-        exe,
-        a.binaries,
-        a.zipfiles,
-        a.datas,
-        strip=False,
-        upx=True,
-        upx_exclude=[],
-        name=APP_NAME,
-    )
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name=APP_NAME,
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,  # GUI app - no console window
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=None,  # TODO: Add icon when available: icon='assets/icon.ico'
+    version='version_info.txt',  # Windows version info
+)
+
+# ============================================================================
+# COLLECT (Directory mode)
+# ============================================================================
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name=APP_NAME,
+)
